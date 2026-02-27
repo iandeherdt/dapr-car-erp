@@ -103,6 +103,7 @@ Creates sample customers, vehicles, work orders, and inventory parts via the BFF
 |---------|-----|
 | **Main UI (shell)** | http://localhost:3000 |
 | BFF REST API | http://localhost:4000 |
+| BFF Swagger UI | http://localhost:4000/docs |
 | Customers remote (standalone) | http://localhost:3001 |
 | Work Orders remote (standalone) | http://localhost:3002 |
 | Inventory remote (standalone) | http://localhost:3003 |
