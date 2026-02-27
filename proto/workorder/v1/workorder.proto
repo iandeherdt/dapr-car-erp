@@ -1,0 +1,107 @@
+syntax = "proto3";
+package workorder.v1;
+
+import "common/v1/types.proto";
+
+service WorkOrderService {
+  rpc CreateWorkOrder(CreateWorkOrderRequest) returns (WorkOrder);
+  rpc GetWorkOrder(GetWorkOrderRequest) returns (WorkOrder);
+  rpc ListWorkOrders(ListWorkOrdersRequest) returns (ListWorkOrdersResponse);
+  rpc UpdateWorkOrderStatus(UpdateWorkOrderStatusRequest) returns (WorkOrder);
+  rpc AddLineItem(AddLineItemRequest) returns (WorkOrder);
+  rpc RemoveLineItem(RemoveLineItemRequest) returns (WorkOrder);
+  rpc AddLaborEntry(AddLaborEntryRequest) returns (WorkOrder);
+}
+
+enum WorkOrderStatus {
+  WORK_ORDER_STATUS_UNSPECIFIED = 0;
+  WORK_ORDER_STATUS_DRAFT = 1;
+  WORK_ORDER_STATUS_PENDING = 2;
+  WORK_ORDER_STATUS_IN_PROGRESS = 3;
+  WORK_ORDER_STATUS_AWAITING_PARTS = 4;
+  WORK_ORDER_STATUS_COMPLETED = 5;
+  WORK_ORDER_STATUS_CANCELLED = 6;
+  WORK_ORDER_STATUS_INVOICED = 7;
+}
+
+message WorkOrder {
+  string id = 1;
+  string customer_id = 2;
+  string vehicle_id = 3;
+  string description = 4;
+  WorkOrderStatus status = 5;
+  repeated WorkOrderLineItem line_items = 6;
+  repeated LaborEntry labor_entries = 7;
+  common.v1.Money estimated_total = 8;
+  common.v1.Money actual_total = 9;
+  string assigned_mechanic = 10;
+  string notes = 11;
+  string created_at = 12;
+  string updated_at = 13;
+  string completed_at = 14;
+}
+
+message WorkOrderLineItem {
+  string id = 1;
+  string work_order_id = 2;
+  string part_id = 3;
+  string part_name = 4;
+  int32 quantity = 5;
+  common.v1.Money unit_price = 6;
+  common.v1.Money total_price = 7;
+}
+
+message LaborEntry {
+  string id = 1;
+  string work_order_id = 2;
+  string description = 3;
+  double hours = 4;
+  common.v1.Money hourly_rate = 5;
+  common.v1.Money total = 6;
+  string mechanic_name = 7;
+}
+
+message CreateWorkOrderRequest {
+  string customer_id = 1;
+  string vehicle_id = 2;
+  string description = 3;
+  string assigned_mechanic = 4;
+  string notes = 5;
+}
+
+message GetWorkOrderRequest { string id = 1; }
+
+message ListWorkOrdersRequest {
+  common.v1.Pagination pagination = 1;
+  WorkOrderStatus status_filter = 2;
+  string customer_id_filter = 3;
+}
+
+message ListWorkOrdersResponse {
+  repeated WorkOrder work_orders = 1;
+  common.v1.PaginationResult pagination = 2;
+}
+
+message UpdateWorkOrderStatusRequest {
+  string id = 1;
+  WorkOrderStatus new_status = 2;
+}
+
+message AddLineItemRequest {
+  string work_order_id = 1;
+  string part_id = 2;
+  int32 quantity = 3;
+}
+
+message RemoveLineItemRequest {
+  string work_order_id = 1;
+  string line_item_id = 2;
+}
+
+message AddLaborEntryRequest {
+  string work_order_id = 1;
+  string description = 2;
+  double hours = 3;
+  common.v1.Money hourly_rate = 4;
+  string mechanic_name = 5;
+}

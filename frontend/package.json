@@ -1,0 +1,11 @@
+{
+  "name": "car-erp-frontend",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"],
+  "devDependencies": {
+    "webpack": "^5.97.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["@module-federation/nextjs-mf", "sharp", "esbuild"]
+  }
+}

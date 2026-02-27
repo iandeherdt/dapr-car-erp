@@ -1,0 +1,405 @@
+services:
+  # Observability - ELK Stack + Grafana
+  elasticsearch:
+    image: elasticsearch:8.13.4
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - car-erp-network
+
+  logstash:
+    image: logstash:8.13.4
+    volumes:
+      - ./observability/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./observability/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+    ports:
+      - "5044:5044"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - car-erp-network
+
+  kibana:
+    image: kibana:8.13.4
+    environment:
+      ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - car-erp-network
+
+  filebeat:
+    image: elastic/filebeat:8.13.4
+    user: root
+    command: filebeat -e -strict.perms=false
+    volumes:
+      - ./observability/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      logstash:
+        condition: service_started
+    networks:
+      - car-erp-network
+
+  grafana:
+    image: grafana/grafana:10.4.3
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: grafana-opensearch-datasource
+    ports:
+      - "3333:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - car-erp-network
+
+  # Infrastructure
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - car-erp-network
+
+  placement:
+    image: "daprio/dapr:latest"
+    command: ["./placement", "--port", "50006"]
+    ports:
+      - "50006:50006"
+    networks:
+      - car-erp-network
+
+  scheduler:
+    image: "daprio/dapr:latest"
+    command: ["./scheduler", "--port", "50007", "--listen-address", "0.0.0.0", "--etcd-data-dir", "/data"]
+    user: "0"
+    ports:
+      - "50007:50007"
+    volumes:
+      - scheduler-data:/data
+    networks:
+      - car-erp-network
+
+  zipkin:
+    image: openzipkin/zipkin:latest
+    ports:
+      - "9411:9411"
+    networks:
+      - car-erp-network
+
+  # Databases
+  customer-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: customer_db
+      POSTGRES_USER: customer_user
+      POSTGRES_PASSWORD: customer_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - customer-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customer_user -d customer_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - car-erp-network
+
+  workorder-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: workorder_db
+      POSTGRES_USER: workorder_user
+      POSTGRES_PASSWORD: workorder_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - workorder-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workorder_user -d workorder_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - car-erp-network
+
+  inventory-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: inventory_db
+      POSTGRES_USER: inventory_user
+      POSTGRES_PASSWORD: inventory_pass
+    ports:
+      - "5434:5432"
+    volumes:
+      - inventory-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inventory_user -d inventory_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - car-erp-network
+
+  billing-db:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: billing_user
+      MONGO_INITDB_ROOT_PASSWORD: billing_pass
+      MONGO_INITDB_DATABASE: billing_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - billing-db-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - car-erp-network
+
+  # Customer Service (Node.js/TS)
+  customer-service:
+    build:
+      context: .
+      dockerfile: services/customer-service/Dockerfile
+    environment:
+      DATABASE_URL: "postgresql://customer_user:customer_pass@customer-db:5432/customer_db"
+      APP_PORT: "50051"
+      DAPR_HTTP_PORT: "3500"
+    depends_on:
+      customer-db:
+        condition: service_healthy
+    networks:
+      - car-erp-network
+
+  customer-service-dapr:
+    image: "daprio/daprd:latest"
+    command:
+      [
+        "./daprd",
+        "--app-id", "customer-service",
+        "--app-port", "50051",
+        "--app-protocol", "grpc",
+        "--dapr-http-port", "3500",
+        "--dapr-grpc-port", "50001",
+        "--placement-host-address", "placement:50006",
+        "--resources-path", "/components",
+        "--config", "/configuration/appconfig.yaml",
+        "--log-level", "info"
+      ]
+    volumes:
+      - ./dapr/components:/components
+      - ./dapr/configuration:/configuration
+    depends_on:
+      - customer-service
+      - placement
+      - scheduler
+      - redis
+    network_mode: "service:customer-service"
+
+  # Work Order Service (C# .NET 8)
+  workorder-service:
+    build:
+      context: .
+      dockerfile: services/workorder-service/Dockerfile
+    environment:
+      ConnectionStrings__DefaultConnection: "Host=workorder-db;Port=5432;Database=workorder_db;Username=workorder_user;Password=workorder_pass"
+      APP_GRPC_PORT: "50051"
+      DAPR_HTTP_PORT: "3500"
+    depends_on:
+      workorder-db:
+        condition: service_healthy
+    networks:
+      - car-erp-network
+
+  workorder-service-dapr:
+    image: "daprio/daprd:latest"
+    command:
+      [
+        "./daprd",
+        "--app-id", "workorder-service",
+        "--app-port", "50051",
+        "--app-protocol", "grpc",
+        "--dapr-http-port", "3500",
+        "--dapr-grpc-port", "50001",
+        "--placement-host-address", "placement:50006",
+        "--resources-path", "/components",
+        "--config", "/configuration/appconfig.yaml",
+        "--log-level", "info"
+      ]
+    volumes:
+      - ./dapr/components:/components
+      - ./dapr/configuration:/configuration
+    depends_on:
+      - workorder-service
+      - placement
+      - scheduler
+      - redis
+    network_mode: "service:workorder-service"
+
+  # Inventory Service (C# .NET 8)
+  inventory-service:
+    build:
+      context: .
+      dockerfile: services/inventory-service/Dockerfile
+    environment:
+      ConnectionStrings__DefaultConnection: "Host=inventory-db;Port=5432;Database=inventory_db;Username=inventory_user;Password=inventory_pass"
+      APP_GRPC_PORT: "50051"
+      DAPR_HTTP_PORT: "3500"
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+    networks:
+      - car-erp-network
+
+  inventory-service-dapr:
+    image: "daprio/daprd:latest"
+    command:
+      [
+        "./daprd",
+        "--app-id", "inventory-service",
+        "--app-port", "50051",
+        "--app-protocol", "grpc",
+        "--dapr-http-port", "3500",
+        "--dapr-grpc-port", "50001",
+        "--placement-host-address", "placement:50006",
+        "--resources-path", "/components",
+        "--config", "/configuration/appconfig.yaml",
+        "--log-level", "info"
+      ]
+    volumes:
+      - ./dapr/components:/components
+      - ./dapr/configuration:/configuration
+    depends_on:
+      - inventory-service
+      - placement
+      - scheduler
+      - redis
+    network_mode: "service:inventory-service"
+
+  # Billing Service (Node.js/TS)
+  billing-service:
+    build:
+      context: .
+      dockerfile: services/billing-service/Dockerfile
+    environment:
+      MONGODB_URI: "mongodb://billing_user:billing_pass@billing-db:27017/billing_db?authSource=admin"
+      APP_PORT: "50051"
+      DAPR_HTTP_PORT: "3500"
+    depends_on:
+      billing-db:
+        condition: service_healthy
+    networks:
+      - car-erp-network
+
+  billing-service-dapr:
+    image: "daprio/daprd:latest"
+    command:
+      [
+        "./daprd",
+        "--app-id", "billing-service",
+        "--app-port", "50051",
+        "--app-protocol", "grpc",
+        "--dapr-http-port", "3500",
+        "--dapr-grpc-port", "50001",
+        "--placement-host-address", "placement:50006",
+        "--resources-path", "/components",
+        "--config", "/configuration/appconfig.yaml",
+        "--log-level", "info"
+      ]
+    volumes:
+      - ./dapr/components:/components
+      - ./dapr/configuration:/configuration
+    depends_on:
+      - billing-service
+      - placement
+      - scheduler
+      - redis
+    network_mode: "service:billing-service"
+
+  # BFF (Node.js/Fastify)
+  bff:
+    build:
+      context: .
+      dockerfile: bff/Dockerfile
+    environment:
+      BFF_PORT: "4000"
+      DAPR_GRPC_PORT: "50001"
+      DAPR_HTTP_PORT: "3500"
+    ports:
+      - "4000:4000"
+    depends_on:
+      - customer-service
+      - workorder-service
+      - inventory-service
+      - billing-service
+    networks:
+      - car-erp-network
+
+  bff-dapr:
+    image: "daprio/daprd:latest"
+    command:
+      [
+        "./daprd",
+        "--app-id", "bff",
+        "--app-port", "4000",
+        "--app-protocol", "http",
+        "--dapr-http-port", "3500",
+        "--dapr-grpc-port", "50001",
+        "--placement-host-address", "placement:50006",
+        "--resources-path", "/components",
+        "--config", "/configuration/appconfig.yaml",
+        "--log-level", "info"
+      ]
+    volumes:
+      - ./dapr/components:/components
+      - ./dapr/configuration:/configuration
+    depends_on:
+      - bff
+      - placement
+      - scheduler
+      - redis
+    network_mode: "service:bff"
+
+volumes:
+  customer-db-data:
+  workorder-db-data:
+  inventory-db-data:
+  billing-db-data:
+  scheduler-data:
+  elasticsearch-data:
+  grafana-data:
+
+networks:
+  car-erp-network:
+    driver: bridge

@@ -1,0 +1,36 @@
+# General
+.git
+.gitignore
+*.md
+
+# Node.js
+**/node_modules
+**/dist
+**/.npm
+**/.cache
+
+# TypeScript build info
+**/*.tsbuildinfo
+
+# Test files
+**/*.test.ts
+**/*.spec.ts
+**/coverage
+
+# Environment files
+**/.env
+**/.env.*
+
+# Editor artifacts
+**/.vscode
+**/.idea
+**/*.swp
+**/*.swo
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Docker
+**/.dockerignore
+**/Dockerfile*

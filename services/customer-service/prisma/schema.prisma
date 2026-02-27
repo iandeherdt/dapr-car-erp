@@ -1,0 +1,47 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id          String    @id @default(uuid())
+  firstName   String
+  lastName    String
+  email       String?   @unique
+  phone       String?
+  addressLine1 String
+  addressLine2 String?
+  city        String
+  postalCode  String
+  country     String    @default("Belgium")
+  companyName String?
+  vatNumber   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  vehicles    Vehicle[]
+
+  @@map("customers")
+}
+
+model Vehicle {
+  id           String   @id @default(uuid())
+  customerId   String
+  make         String
+  model        String
+  year         Int
+  vin          String?  @unique
+  licensePlate String?
+  mileageKm    Int      @default(0)
+  color        String?
+  engineType   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("vehicles")
+}

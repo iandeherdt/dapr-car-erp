@@ -1,0 +1,201 @@
+{
+  "id": null,
+  "uid": "car-erp-logs",
+  "title": "Car ERP - Logs & Observability",
+  "tags": ["car-erp", "logs"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "label": "Service",
+        "datasource": { "type": "elasticsearch", "uid": "elasticsearch" },
+        "query": "{\"find\": \"terms\", \"field\": \"service.keyword\"}",
+        "includeAll": true,
+        "allValue": "*",
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "correlationId",
+        "type": "textbox",
+        "label": "Correlation ID",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Log Volume by Service",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "elasticsearch", "uid": "elasticsearch" },
+      "targets": [
+        {
+          "refId": "bff",
+          "query": "service:bff",
+          "alias": "bff",
+          "timeField": "@timestamp",
+          "metrics": [{ "id": "1", "type": "count" }],
+          "bucketAggs": [
+            { "id": "2", "type": "date_histogram", "field": "@timestamp", "settings": { "interval": "auto", "min_doc_count": "0" } }
+          ]
+        },
+        {
+          "refId": "customer",
+          "query": "service:customer-service",
+          "alias": "customer-service",
+          "timeField": "@timestamp",
+          "metrics": [{ "id": "1", "type": "count" }],
+          "bucketAggs": [
+            { "id": "2", "type": "date_histogram", "field": "@timestamp", "settings": { "interval": "auto", "min_doc_count": "0" } }
+          ]
+        },
+        {
+          "refId": "workorder",
+          "query": "service:workorder-service",
+          "alias": "workorder-service",
+          "timeField": "@timestamp",
+          "metrics": [{ "id": "1", "type": "count" }],
+          "bucketAggs": [
+            { "id": "2", "type": "date_histogram", "field": "@timestamp", "settings": { "interval": "auto", "min_doc_count": "0" } }
+          ]
+        },
+        {
+          "refId": "inventory",
+          "query": "service:inventory-service",
+          "alias": "inventory-service",
+          "timeField": "@timestamp",
+          "metrics": [{ "id": "1", "type": "count" }],
+          "bucketAggs": [
+            { "id": "2", "type": "date_histogram", "field": "@timestamp", "settings": { "interval": "auto", "min_doc_count": "0" } }
+          ]
+        },
+        {
+          "refId": "billing",
+          "query": "service:billing-service",
+          "alias": "billing-service",
+          "timeField": "@timestamp",
+          "metrics": [{ "id": "1", "type": "count" }],
+          "bucketAggs": [
+            { "id": "2", "type": "date_histogram", "field": "@timestamp", "settings": { "interval": "auto", "min_doc_count": "0" } }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Error Rate",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "elasticsearch", "uid": "elasticsearch" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "red", "mode": "fixed" }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "level:error AND service:$service",
+          "timeField": "@timestamp",
+          "metrics": [{ "id": "1", "type": "count" }],
+          "bucketAggs": [
+            { "id": "2", "type": "date_histogram", "field": "@timestamp", "settings": { "interval": "auto" } }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Top Actions",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "datasource": { "type": "elasticsearch", "uid": "elasticsearch" },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "service:$service AND action:*",
+          "timeField": "@timestamp",
+          "metrics": [{ "id": "1", "type": "count" }],
+          "bucketAggs": [
+            { "id": "2", "type": "terms", "field": "action.keyword", "settings": { "size": "20", "order": "desc", "orderBy": "1" } }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "logs",
+      "title": "Recent Errors",
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 8 },
+      "datasource": { "type": "elasticsearch", "uid": "elasticsearch" },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "level:error AND service:$service",
+          "timeField": "@timestamp",
+          "metrics": [{ "id": "1", "type": "logs" }],
+          "bucketAggs": []
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Correlation ID Trace",
+      "description": "Set the Correlation ID variable above to trace a request across services",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "elasticsearch", "uid": "elasticsearch" },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Ascending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "correlationId:\"$correlationId\"",
+          "timeField": "@timestamp",
+          "metrics": [{ "id": "1", "type": "logs" }],
+          "bucketAggs": []
+        }
+      ]
+    }
+  ],
+  "__inputs": [
+    {
+      "name": "DS_ELASTICSEARCH",
+      "label": "Elasticsearch",
+      "type": "datasource",
+      "pluginId": "elasticsearch"
+    }
+  ],
+  "__requires": [
+    { "type": "datasource", "id": "elasticsearch", "name": "Elasticsearch", "version": "1.0.0" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
+    { "type": "panel", "id": "table", "name": "Table", "version": "" },
+    { "type": "panel", "id": "logs", "name": "Logs", "version": "" }
+  ]
+}
