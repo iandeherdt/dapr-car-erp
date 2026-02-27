@@ -103,6 +103,8 @@ All services emit newline-delimited JSON to stdout:
 
 ### BFF REST API
 
+Interactive documentation is available at **http://localhost:4000/docs** (Swagger UI). The OpenAPI 3.0 spec is served at `/docs/json`.
+
 ```
 GET    /api/customers
 POST   /api/customers
@@ -350,6 +352,7 @@ pnpm --filter @car-erp/shell dev       # :3000  ← open this in browser
 |---|---|
 | Shell (main UI) | http://localhost:3000 |
 | BFF REST API | http://localhost:4000 |
+| BFF Swagger UI | http://localhost:4000/docs |
 | Zipkin tracing | http://localhost:9411 |
 | Kibana (log search) | http://localhost:5601 |
 | Grafana (dashboards) | http://localhost:3333 |
