@@ -1,16 +1,22 @@
 import { randomUUID } from 'crypto';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import { customerRoutes } from './routes/customers.js';
 import { workOrderRoutes } from './routes/workorders.js';
 import { inventoryRoutes } from './routes/inventory.js';
 import { billingRoutes } from './routes/billing.js';
 import { dashboardRoutes } from './routes/dashboard.js';
+import { schemas } from './schemas.js';
 
 const PORT = parseInt(process.env.BFF_PORT || '4000', 10);
 const HOST = process.env.BFF_HOST || '0.0.0.0';
 
 const server = Fastify({
+  ajv: {
+    customOptions: { strict: false },
+  },
   logger: {
     level: process.env.LOG_LEVEL || 'info',
     base: { service: 'bff' },
@@ -64,6 +70,38 @@ async function bootstrap(): Promise<void> {
     }, 'Request error');
   });
 
+  // Register Swagger (OpenAPI 3.0)
+  await server.register(swagger, {
+    openapi: {
+      openapi: '3.0.3',
+      info: {
+        title: 'Car Repair ERP — BFF API',
+        description:
+          'REST API served by the Backend-for-Frontend. All requests are forwarded to downstream microservices via gRPC through Dapr sidecars.',
+        version: '1.0.0',
+      },
+      servers: [{ url: 'http://localhost:4000', description: 'Local development' }],
+      tags: [
+        { name: 'Customers', description: 'Customer and vehicle management' },
+        { name: 'Work Orders', description: 'Work order lifecycle and line items' },
+        { name: 'Inventory', description: 'Parts catalog and stock management' },
+        { name: 'Billing', description: 'Invoice management' },
+        { name: 'Dashboard', description: 'Aggregated dashboard statistics' },
+        { name: 'Health', description: 'Health check' },
+      ],
+    },
+  });
+
+  await server.register(swaggerUi, {
+    routePrefix: '/docs',
+    uiConfig: { docExpansion: 'list', deepLinking: true },
+  });
+
+  // Register shared schemas (referenced via $ref in route schemas)
+  for (const schema of schemas) {
+    server.addSchema(schema);
+  }
+
   // Register CORS - allow all origins for dev
   await server.register(cors, {
     origin: true,
@@ -73,9 +111,27 @@ async function bootstrap(): Promise<void> {
   });
 
   // Health check
-  server.get('/healthz', async (_request, _reply) => {
-    return { status: 'ok', timestamp: new Date().toISOString() };
-  });
+  server.get(
+    '/healthz',
+    {
+      schema: {
+        tags: ['Health'],
+        summary: 'Health check',
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              status: { type: 'string', example: 'ok' },
+              timestamp: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+      },
+    },
+    async (_request, _reply) => {
+      return { status: 'ok', timestamp: new Date().toISOString() };
+    },
+  );
 
   // Register route plugins
   await server.register(customerRoutes, { prefix: '/api' });

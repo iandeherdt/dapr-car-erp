@@ -10,10 +10,49 @@ function handleError(err: unknown, reply: FastifyReply): FastifyReply {
   return reply.status(500).send({ error: message });
 }
 
+const idParam = {
+  type: 'object',
+  properties: { id: { type: 'string', format: 'uuid' } },
+  required: ['id'],
+};
+
+const paginationQuery = {
+  page: { type: 'string', description: 'Page number (1-based)', default: '1' },
+  pageSize: { type: 'string', description: 'Records per page', default: '20' },
+};
+
+const errorResponses = {
+  400: { $ref: 'ApiError#' },
+  404: { $ref: 'ApiError#' },
+  500: { $ref: 'ApiError#' },
+};
+
 export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
   // GET /api/invoices
   fastify.get(
     '/invoices',
+    {
+      schema: {
+        tags: ['Billing'],
+        summary: 'List invoices',
+        description: 'Returns a paginated list of invoices with an optional status filter.',
+        querystring: {
+          type: 'object',
+          properties: {
+            ...paginationQuery,
+            status: {
+              type: 'string',
+              enum: ['draft', 'sent', 'paid', 'overdue', 'cancelled'],
+              description: 'Filter by invoice status',
+            },
+          },
+        },
+        response: {
+          200: { $ref: 'ListInvoicesResponse#' },
+          ...errorResponses,
+        },
+      },
+    },
     async (
       request: FastifyRequest<{
         Querystring: {
@@ -41,6 +80,17 @@ export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
   // GET /api/invoices/:id
   fastify.get(
     '/invoices/:id',
+    {
+      schema: {
+        tags: ['Billing'],
+        summary: 'Get invoice by ID',
+        params: idParam,
+        response: {
+          200: { $ref: 'Invoice#' },
+          ...errorResponses,
+        },
+      },
+    },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
@@ -58,6 +108,27 @@ export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
   // PUT /api/invoices/:id/status
   fastify.put(
     '/invoices/:id/status',
+    {
+      schema: {
+        tags: ['Billing'],
+        summary: 'Update invoice status',
+        params: idParam,
+        body: {
+          type: 'object',
+          required: ['status'],
+          properties: {
+            status: {
+              type: 'string',
+              enum: ['draft', 'sent', 'paid', 'overdue', 'cancelled'],
+            },
+          },
+        },
+        response: {
+          200: { $ref: 'Invoice#' },
+          ...errorResponses,
+        },
+      },
+    },
     async (
       request: FastifyRequest<{
         Params: { id: string };
@@ -81,6 +152,21 @@ export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
   // GET /api/customers/:id/invoices
   fastify.get(
     '/customers/:id/invoices',
+    {
+      schema: {
+        tags: ['Billing'],
+        summary: 'List invoices for a customer',
+        params: idParam,
+        querystring: {
+          type: 'object',
+          properties: { ...paginationQuery },
+        },
+        response: {
+          200: { $ref: 'ListInvoicesResponse#' },
+          ...errorResponses,
+        },
+      },
+    },
     async (
       request: FastifyRequest<{
         Params: { id: string };

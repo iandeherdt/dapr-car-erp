@@ -16,6 +16,19 @@ export async function dashboardRoutes(fastify: FastifyInstance): Promise<void> {
   // GET /api/dashboard
   fastify.get(
     '/dashboard',
+    {
+      schema: {
+        tags: ['Dashboard'],
+        summary: 'Get dashboard statistics',
+        description:
+          'Aggregates data from work-order, inventory, and billing services in parallel. ' +
+          'Returns the 5 most recent work orders, counts of active work orders, low-stock parts, and pending invoices.',
+        response: {
+          200: { $ref: 'DashboardStats#' },
+          500: { $ref: 'ApiError#' },
+        },
+      },
+    },
     async (_request: FastifyRequest, reply: FastifyReply) => {
       try {
         // Fetch all dashboard data concurrently from multiple services
