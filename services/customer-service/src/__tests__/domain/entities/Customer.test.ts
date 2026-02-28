@@ -1,6 +1,7 @@
-import { validateCreateCustomer } from '../../../domain/entities/Customer.js';
+import { Customer } from '../../../domain/entities/Customer.js';
+import { ValidationError } from '../../../domain/errors.js';
 
-describe('validateCreateCustomer', () => {
+describe('Customer.validate', () => {
   const valid = {
     firstName: 'John',
     lastName: 'Doe',
@@ -10,26 +11,38 @@ describe('validateCreateCustomer', () => {
   };
 
   it('passes with valid input', () => {
-    expect(() => validateCreateCustomer(valid)).not.toThrow();
+    expect(() => Customer.validate(valid)).not.toThrow();
   });
 
-  it('throws when firstName is empty', () => {
-    expect(() => validateCreateCustomer({ ...valid, firstName: '' })).toThrow('firstName is required');
+  it('throws ValidationError when firstName is empty', () => {
+    expect(() => Customer.validate({ ...valid, firstName: '' })).toThrow(ValidationError);
   });
 
-  it('throws when lastName is empty', () => {
-    expect(() => validateCreateCustomer({ ...valid, lastName: '' })).toThrow('lastName is required');
+  it('throws ValidationError when lastName is empty', () => {
+    expect(() => Customer.validate({ ...valid, lastName: '' })).toThrow(ValidationError);
   });
 
-  it('throws when addressLine1 is empty', () => {
-    expect(() => validateCreateCustomer({ ...valid, addressLine1: '' })).toThrow('addressLine1 is required');
+  it('throws ValidationError when addressLine1 is empty', () => {
+    expect(() => Customer.validate({ ...valid, addressLine1: '' })).toThrow(ValidationError);
   });
 
-  it('throws when city is empty', () => {
-    expect(() => validateCreateCustomer({ ...valid, city: '' })).toThrow('city is required');
+  it('throws ValidationError when city is empty', () => {
+    expect(() => Customer.validate({ ...valid, city: '' })).toThrow(ValidationError);
   });
 
-  it('throws when postalCode is empty', () => {
-    expect(() => validateCreateCustomer({ ...valid, postalCode: '' })).toThrow('postalCode is required');
+  it('throws ValidationError when postalCode is empty', () => {
+    expect(() => Customer.validate({ ...valid, postalCode: '' })).toThrow(ValidationError);
+  });
+
+  it('throws ValidationError when email is malformed', () => {
+    expect(() => Customer.validate({ ...valid, email: 'not-an-email' })).toThrow(ValidationError);
+  });
+
+  it('passes when email is a valid address', () => {
+    expect(() => Customer.validate({ ...valid, email: 'john@example.com' })).not.toThrow();
+  });
+
+  it('passes when email is omitted', () => {
+    expect(() => Customer.validate({ ...valid, email: undefined })).not.toThrow();
   });
 });

@@ -53,31 +53,28 @@ public class InventoryGrpcService : Inventory.V1.InventoryService.InventoryServi
     {
         try
         {
-            var now = DateTime.UtcNow;
-            var partData = new Domain.Part
-            {
-                Id = Guid.NewGuid(),
-                Sku = request.Sku,
-                Name = request.Name,
-                Description = request.Description,
-                Category = request.Category,
-                Manufacturer = request.Manufacturer,
-                UnitPriceCents = request.UnitPrice?.AmountCents ?? 0,
-                UnitPriceCurrency = request.UnitPrice?.Currency ?? "EUR",
-                CostPriceCents = request.CostPrice?.AmountCents ?? 0,
-                CostPriceCurrency = request.CostPrice?.Currency ?? "EUR",
-                QuantityInStock = request.InitialStock,
-                QuantityReserved = 0,
-                ReorderLevel = request.ReorderLevel > 0 ? request.ReorderLevel : 5,
-                Location = request.Location,
-                CompatibleMakes = [.. request.CompatibleMakes],
-                CreatedAt = now,
-                UpdatedAt = now,
-            };
+            var partData = Domain.Part.Create(
+                sku: request.Sku,
+                name: request.Name,
+                description: request.Description,
+                category: request.Category,
+                manufacturer: request.Manufacturer,
+                unitPriceCents: request.UnitPrice?.AmountCents ?? 0,
+                unitPriceCurrency: request.UnitPrice?.Currency ?? "EUR",
+                costPriceCents: request.CostPrice?.AmountCents ?? 0,
+                costPriceCurrency: request.CostPrice?.Currency ?? "EUR",
+                quantityInStock: request.InitialStock,
+                reorderLevel: request.ReorderLevel > 0 ? request.ReorderLevel : 5,
+                location: request.Location,
+                compatibleMakes: [.. request.CompatibleMakes]);
 
             var part = await _createPart.ExecuteAsync(partData, context.CancellationToken);
             _logger.LogInformation("Created part {PartId} with SKU {Sku}", part.Id, part.Sku);
             return MapToProto(part);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
         }
         catch (InvalidOperationException ex)
         {

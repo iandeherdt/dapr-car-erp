@@ -1,7 +1,8 @@
 import { IInvoiceRepository } from '../../domain/repositories/IInvoiceRepository';
 import { IEventPublisher } from '../../domain/events/IEventPublisher';
-import { InvoiceEntity, CreateInvoiceInput, computeTotals } from '../../domain/entities/Invoice';
+import { InvoiceEntity, CreateInvoiceInput, Invoice } from '../../domain/entities/Invoice';
 import { ValidationError } from '../../domain/errors';
+import { logger } from '../../logger';
 
 export interface CreateInvoiceDeps {
   invoiceRepo: IInvoiceRepository;
@@ -17,7 +18,7 @@ export class CreateInvoiceUseCase {
     if (!input.customerId) throw new ValidationError('customer_id is required');
 
     const taxRate = (input.taxRate !== undefined && input.taxRate > 0) ? input.taxRate : 0.21;
-    const { subtotalCents, taxAmountCents, totalCents } = computeTotals(input.lineItems, taxRate);
+    const { subtotalCents, taxAmountCents, totalCents } = Invoice.computeTotals(input.lineItems, taxRate);
     const invoiceNumber = await this.deps.getInvoiceNumber();
 
     const now = new Date();
@@ -42,7 +43,12 @@ export class CreateInvoiceUseCase {
       customer_id: invoice.customerId,
       total_cents: invoice.totalCents,
       currency: 'EUR',
-    }).catch(() => {});
+    }).catch((err: unknown) => {
+      logger.warn(
+        { err: (err as Error)?.message, invoiceId: invoice.id },
+        'invoice.created event publish failed — downstream services may be out of sync until replayed',
+      );
+    });
 
     return invoice;
   }

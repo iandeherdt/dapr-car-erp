@@ -85,6 +85,11 @@ export class MongoInvoiceRepository implements IInvoiceRepository {
     return { invoices: invoices.map(toEntity), totalCount };
   }
 
+  async findByWorkOrderId(workOrderId: string): Promise<InvoiceEntity | null> {
+    const doc = await InvoiceModel.findOne({ workOrderId });
+    return doc ? toEntity(doc) : null;
+  }
+
   async updateStatus(id: string, status: InvoiceStatus): Promise<InvoiceEntity> {
     const update: Record<string, unknown> = { status };
     if (status === 'paid') {

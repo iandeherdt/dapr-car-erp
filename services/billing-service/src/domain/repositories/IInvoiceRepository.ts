@@ -23,5 +23,6 @@ export interface IInvoiceRepository {
   findById(id: string): Promise<InvoiceEntity | null>;
   findMany(params: ListInvoicesParams): Promise<ListInvoicesResult>;
   findByCustomerId(customerId: string, params: { page: number; pageSize: number }): Promise<ListInvoicesResult>;
+  findByWorkOrderId(workOrderId: string): Promise<InvoiceEntity | null>;
   updateStatus(id: string, status: InvoiceStatus): Promise<InvoiceEntity>;
 }

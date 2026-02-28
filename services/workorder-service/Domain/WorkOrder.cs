@@ -20,6 +20,36 @@ public class WorkOrder
     public List<LaborEntry> LaborEntries { get; set; } = new();
 
     /// <summary>
+    /// Factory method. Enforces all invariants at construction time.
+    /// </summary>
+    public static WorkOrder Create(
+        Guid customerId,
+        Guid vehicleId,
+        string description,
+        string assignedMechanic = "",
+        string notes = "",
+        string currency = "EUR")
+    {
+        if (string.IsNullOrWhiteSpace(description))
+            throw new ArgumentException("description is required", nameof(description));
+
+        var now = DateTime.UtcNow;
+        return new WorkOrder
+        {
+            Id = Guid.NewGuid(),
+            CustomerId = customerId,
+            VehicleId = vehicleId,
+            Description = description.Trim(),
+            AssignedMechanic = assignedMechanic?.Trim() ?? string.Empty,
+            Notes = notes?.Trim() ?? string.Empty,
+            Status = WorkOrderStatus.Draft,
+            Currency = currency,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+    }
+
+    /// <summary>
     /// Recalculates EstimatedTotalCents as sum of all line items + labor entries.
     /// </summary>
     public void RecalculateEstimatedTotal()

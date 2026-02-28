@@ -23,22 +23,7 @@ public class CreateWorkOrderUseCase
         string notes,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(description))
-            throw new ArgumentException("description is required", nameof(description));
-
-        var workOrder = new WorkOrder
-        {
-            Id = Guid.NewGuid(),
-            CustomerId = customerId,
-            VehicleId = vehicleId,
-            Description = description.Trim(),
-            AssignedMechanic = assignedMechanic?.Trim() ?? string.Empty,
-            Notes = notes?.Trim() ?? string.Empty,
-            Status = WorkOrderStatus.Draft,
-            Currency = "EUR",
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        };
+        var workOrder = WorkOrder.Create(customerId, vehicleId, description, assignedMechanic, notes);
 
         await _repository.CreateAsync(workOrder, ct);
         await _eventPublisher.PublishWorkOrderCreatedAsync(workOrder, ct);

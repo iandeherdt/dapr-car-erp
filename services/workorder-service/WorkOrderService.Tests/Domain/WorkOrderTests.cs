@@ -89,4 +89,27 @@ public class WorkOrderTests
         wo.RecalculateEstimatedTotal();
         wo.EstimatedTotalCents.Should().Be(0);
     }
+
+    [Fact]
+    public void Create_ValidInput_ReturnsWorkOrderWithDraftStatusAndTrimmedDescription()
+    {
+        var customerId = Guid.NewGuid();
+        var vehicleId = Guid.NewGuid();
+
+        var wo = WorkOrder.Create(customerId, vehicleId, "  Oil change  ", "Alice");
+
+        wo.CustomerId.Should().Be(customerId);
+        wo.VehicleId.Should().Be(vehicleId);
+        wo.Description.Should().Be("Oil change");
+        wo.AssignedMechanic.Should().Be("Alice");
+        wo.Status.Should().Be(WorkOrderStatus.Draft);
+        wo.Id.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void Create_EmptyDescription_ThrowsArgumentException()
+    {
+        var act = () => WorkOrder.Create(Guid.NewGuid(), Guid.NewGuid(), "   ");
+        act.Should().Throw<ArgumentException>().WithParameterName("description");
+    }
 }

@@ -34,6 +34,7 @@ describe('CreateInvoiceUseCase', () => {
       findById: jest.fn(),
       findMany: jest.fn(),
       findByCustomerId: jest.fn(),
+      findByWorkOrderId: jest.fn(),
       updateStatus: jest.fn(),
     };
     mockPublisher = { publish: jest.fn() };
@@ -73,5 +74,15 @@ describe('CreateInvoiceUseCase', () => {
     await useCase.execute({ workOrderId: 'wo-1', customerId: 'cust-1', lineItems: [] });
 
     expect(mockRepo.create).toHaveBeenCalledWith(expect.objectContaining({ taxRate: 0.21 }));
+  });
+
+  it('still returns the invoice when event publish fails', async () => {
+    mockRepo.create.mockResolvedValue(mockInvoice);
+    mockPublisher.publish.mockRejectedValue(new Error('Dapr unavailable'));
+
+    const result = await useCase.execute({ workOrderId: 'wo-1', customerId: 'cust-1', lineItems: [] });
+
+    // The use case must not throw — publish failure is non-fatal and logged as warn
+    expect(result.id).toBe('inv-1');
   });
 });

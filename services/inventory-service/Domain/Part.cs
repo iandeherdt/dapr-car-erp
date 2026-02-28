@@ -31,4 +31,50 @@ public class Part
     /// Returns true when the part is at or below its reorder threshold.
     /// </summary>
     public bool IsLowStock => AvailableQuantity <= ReorderLevel;
+
+    /// <summary>
+    /// Factory method. Enforces that SKU and Name are present at construction time.
+    /// </summary>
+    public static Part Create(
+        string sku,
+        string name,
+        string description = "",
+        string category = "",
+        string manufacturer = "",
+        long unitPriceCents = 0,
+        string unitPriceCurrency = "EUR",
+        long costPriceCents = 0,
+        string costPriceCurrency = "EUR",
+        int quantityInStock = 0,
+        int reorderLevel = 5,
+        string location = "",
+        string[]? compatibleMakes = null)
+    {
+        if (string.IsNullOrWhiteSpace(sku))
+            throw new ArgumentException("SKU is required", nameof(sku));
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Name is required", nameof(name));
+
+        var now = DateTime.UtcNow;
+        return new Part
+        {
+            Id = Guid.NewGuid(),
+            Sku = sku.Trim(),
+            Name = name.Trim(),
+            Description = description.Trim(),
+            Category = category.Trim(),
+            Manufacturer = manufacturer.Trim(),
+            UnitPriceCents = unitPriceCents,
+            UnitPriceCurrency = unitPriceCurrency,
+            CostPriceCents = costPriceCents,
+            CostPriceCurrency = costPriceCurrency,
+            QuantityInStock = quantityInStock,
+            QuantityReserved = 0,
+            ReorderLevel = reorderLevel > 0 ? reorderLevel : 5,
+            Location = location.Trim(),
+            CompatibleMakes = compatibleMakes ?? [],
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+    }
 }

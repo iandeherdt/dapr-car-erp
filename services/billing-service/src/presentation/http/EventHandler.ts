@@ -1,6 +1,7 @@
 import http from 'http';
 import { randomUUID } from 'crypto';
 import { CreateInvoiceUseCase } from '../../application/use-cases/CreateInvoiceUseCase';
+import { IInvoiceRepository } from '../../domain/repositories/IInvoiceRepository';
 import { withCorrelation } from '../../logger';
 
 export const daprSubscriptions = [
@@ -17,7 +18,10 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
-export function createHttpServer(createInvoiceUC: CreateInvoiceUseCase): http.Server {
+export function createHttpServer(
+  createInvoiceUC: CreateInvoiceUseCase,
+  invoiceRepo: IInvoiceRepository,
+): http.Server {
   return http.createServer((req, res) => {
     const { method, url } = req;
 
@@ -34,7 +38,7 @@ export function createHttpServer(createInvoiceUC: CreateInvoiceUseCase): http.Se
     }
 
     if (method === 'POST' && url === '/events/workorder-completed') {
-      handleWorkOrderCompleted(req, res, createInvoiceUC).catch((err) => {
+      handleWorkOrderCompleted(req, res, createInvoiceUC, invoiceRepo).catch((err) => {
         console.error('[event-handler] Unhandled error:', err);
         if (!res.headersSent) { res.writeHead(500); res.end(); }
       });
@@ -58,6 +62,7 @@ async function handleWorkOrderCompleted(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   createInvoiceUC: CreateInvoiceUseCase,
+  invoiceRepo: IInvoiceRepository,
 ): Promise<void> {
   const raw = await readBody(req);
   let correlationId = 'unknown';
@@ -74,6 +79,16 @@ async function handleWorkOrderCompleted(
       log.warn({ payload }, 'workorder.completed: missing required fields');
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ignored', reason: 'missing required fields' }));
+      return;
+    }
+
+    // Idempotency: Dapr delivers at-least-once. If an invoice already exists for
+    // this work order, return success immediately without creating a duplicate.
+    const existing = await invoiceRepo.findByWorkOrderId(payload.work_order_id);
+    if (existing) {
+      log.info({ invoiceId: existing.id }, 'Invoice already exists for work order — skipping (idempotent)');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', invoice_id: existing.id }));
       return;
     }
 

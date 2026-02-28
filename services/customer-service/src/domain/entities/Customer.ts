@@ -1,4 +1,5 @@
 import { VehicleEntity } from './Vehicle.js';
+import { ValidationError } from '../errors.js';
 
 export interface CustomerEntity {
   id: string;
@@ -47,10 +48,21 @@ export interface UpdateCustomerInput {
   vatNumber?: string;
 }
 
-export function validateCreateCustomer(input: CreateCustomerInput): void {
-  if (!input.firstName?.trim()) throw new Error('firstName is required');
-  if (!input.lastName?.trim()) throw new Error('lastName is required');
-  if (!input.addressLine1?.trim()) throw new Error('addressLine1 is required');
-  if (!input.city?.trim()) throw new Error('city is required');
-  if (!input.postalCode?.trim()) throw new Error('postalCode is required');
+export class Customer {
+  /**
+   * Validates that all required fields are present and non-empty.
+   * Throws ValidationError on the first failing rule.
+   */
+  static validate(input: CreateCustomerInput): void {
+    if (!input.firstName?.trim()) throw new ValidationError('firstName is required');
+    if (!input.lastName?.trim()) throw new ValidationError('lastName is required');
+    if (!input.addressLine1?.trim()) throw new ValidationError('addressLine1 is required');
+    if (!input.city?.trim()) throw new ValidationError('city is required');
+    if (!input.postalCode?.trim()) throw new ValidationError('postalCode is required');
+    if (input.email) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) {
+        throw new ValidationError('email must be a valid email address');
+      }
+    }
+  }
 }

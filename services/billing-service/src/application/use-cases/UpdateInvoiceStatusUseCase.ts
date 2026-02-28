@@ -1,7 +1,8 @@
 import { IInvoiceRepository } from '../../domain/repositories/IInvoiceRepository';
 import { IEventPublisher } from '../../domain/events/IEventPublisher';
-import { InvoiceEntity, InvoiceStatus } from '../../domain/entities/Invoice';
+import { InvoiceEntity, InvoiceStatus, Invoice } from '../../domain/entities/Invoice';
 import { NotFoundError, ValidationError } from '../../domain/errors';
+import { logger } from '../../logger';
 
 const PROTO_TO_STATUS: Record<number, InvoiceStatus> = {
   1: 'draft',
@@ -24,6 +25,12 @@ export class UpdateInvoiceStatusUseCase {
     const existing = await this.invoiceRepo.findById(id);
     if (!existing) throw new NotFoundError(`Invoice not found: ${id}`);
 
+    if (!Invoice.canTransitionTo(existing.status, newStatus)) {
+      throw new ValidationError(
+        `Cannot transition invoice from '${existing.status}' to '${newStatus}'`,
+      );
+    }
+
     const previousStatus = existing.status;
     const invoice = await this.invoiceRepo.updateStatus(id, newStatus);
 
@@ -36,7 +43,12 @@ export class UpdateInvoiceStatusUseCase {
         total_cents: invoice.totalCents,
         currency: 'EUR',
         paid_at: invoice.paidAt?.toISOString(),
-      }).catch(() => {});
+      }).catch((err: unknown) => {
+        logger.warn(
+          { err: (err as Error)?.message, invoiceId: invoice.id },
+          'invoice.paid event publish failed — downstream services may be out of sync until replayed',
+        );
+      });
     }
 
     return invoice;

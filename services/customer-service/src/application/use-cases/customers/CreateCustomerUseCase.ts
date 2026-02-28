@@ -1,6 +1,6 @@
 import { ICustomerRepository } from '../../../domain/repositories/ICustomerRepository.js';
 import { IEventPublisher } from '../../../domain/events/IEventPublisher.js';
-import { CreateCustomerInput, CustomerEntity, validateCreateCustomer } from '../../../domain/entities/Customer.js';
+import { CreateCustomerInput, CustomerEntity, Customer } from '../../../domain/entities/Customer.js';
 
 export class CreateCustomerUseCase {
   constructor(
@@ -9,7 +9,7 @@ export class CreateCustomerUseCase {
   ) {}
 
   async execute(input: CreateCustomerInput): Promise<CustomerEntity> {
-    validateCreateCustomer(input);
+    Customer.validate(input);
     const customer = await this.customerRepo.create(input);
     await this.eventPublisher.publish('customer.created', {
       customerId: customer.id,

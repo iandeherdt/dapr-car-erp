@@ -13,7 +13,7 @@ describe('ListInvoicesUseCase', () => {
   };
 
   beforeEach(() => {
-    mockRepo = { create: jest.fn(), findById: jest.fn(), findMany: jest.fn(), findByCustomerId: jest.fn(), updateStatus: jest.fn() };
+    mockRepo = { create: jest.fn(), findById: jest.fn(), findMany: jest.fn(), findByCustomerId: jest.fn(), findByWorkOrderId: jest.fn(), updateStatus: jest.fn() };
     useCase = new ListInvoicesUseCase(mockRepo);
   });
 

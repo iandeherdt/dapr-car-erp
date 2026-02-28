@@ -16,14 +16,15 @@ describe('UpdateInvoiceStatusUseCase', () => {
   };
 
   beforeEach(() => {
-    mockRepo = { create: jest.fn(), findById: jest.fn(), findMany: jest.fn(), findByCustomerId: jest.fn(), updateStatus: jest.fn() };
+    mockRepo = { create: jest.fn(), findById: jest.fn(), findMany: jest.fn(), findByCustomerId: jest.fn(), findByWorkOrderId: jest.fn(), updateStatus: jest.fn() };
     mockPublisher = { publish: jest.fn() };
     useCase = new UpdateInvoiceStatusUseCase(mockRepo, mockPublisher);
   });
 
-  it('transitions status and publishes invoice.paid when transitioning to paid', async () => {
-    mockRepo.findById.mockResolvedValue(draftInvoice);
-    mockRepo.updateStatus.mockResolvedValue({ ...draftInvoice, status: 'paid', paidAt: new Date() });
+  it('transitions sent→paid, persists status, and publishes invoice.paid', async () => {
+    const sentInvoice = { ...draftInvoice, status: 'sent' as const };
+    mockRepo.findById.mockResolvedValue(sentInvoice);
+    mockRepo.updateStatus.mockResolvedValue({ ...sentInvoice, status: 'paid', paidAt: new Date() });
     mockPublisher.publish.mockResolvedValue(undefined);
 
     await useCase.execute('inv-1', 3); // 3 = paid
@@ -35,20 +36,33 @@ describe('UpdateInvoiceStatusUseCase', () => {
   it('does NOT publish invoice.paid when status was already paid', async () => {
     const paidInvoice = { ...draftInvoice, status: 'paid' as const, paidAt: new Date() };
     mockRepo.findById.mockResolvedValue(paidInvoice);
-    mockRepo.updateStatus.mockResolvedValue(paidInvoice);
-    mockPublisher.publish.mockResolvedValue(undefined);
-
-    await useCase.execute('inv-1', 3);
-
+    // paid is a terminal state — attempting paid→paid should be rejected by canTransitionTo
+    await expect(useCase.execute('inv-1', 3)).rejects.toThrow(ValidationError);
     expect(mockPublisher.publish).not.toHaveBeenCalled();
   });
 
-  it('throws ValidationError for unknown status', async () => {
+  it('throws ValidationError for unknown status code', async () => {
     await expect(useCase.execute('inv-1', 99)).rejects.toThrow(ValidationError);
+  });
+
+  it('throws ValidationError for invalid transition (draft→paid)', async () => {
+    mockRepo.findById.mockResolvedValue(draftInvoice); // status: draft
+    await expect(useCase.execute('inv-1', 3)).rejects.toThrow(ValidationError);
   });
 
   it('throws NotFoundError when invoice does not exist', async () => {
     mockRepo.findById.mockResolvedValue(null);
     await expect(useCase.execute('inv-missing', 2)).rejects.toThrow(NotFoundError);
+  });
+
+  it('still returns the invoice when event publish fails', async () => {
+    const sentInvoice = { ...draftInvoice, status: 'sent' as const };
+    mockRepo.findById.mockResolvedValue(sentInvoice);
+    mockRepo.updateStatus.mockResolvedValue({ ...sentInvoice, status: 'paid', paidAt: new Date() });
+    mockPublisher.publish.mockRejectedValue(new Error('Dapr unavailable'));
+
+    const result = await useCase.execute('inv-1', 3);
+
+    expect(result.status).toBe('paid');
   });
 });

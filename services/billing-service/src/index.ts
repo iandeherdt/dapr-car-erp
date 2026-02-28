@@ -127,8 +127,8 @@ async function startGrpcServer(
 // HTTP server (Dapr pub/sub event delivery)
 // ---------------------------------------------------------------------------
 
-function startHttpServer(createInvoiceUC: CreateInvoiceUseCase): void {
-  const server = createHttpServer(createInvoiceUC);
+function startHttpServer(createInvoiceUC: CreateInvoiceUseCase, invoiceRepo: MongoInvoiceRepository): void {
+  const server = createHttpServer(createInvoiceUC, invoiceRepo);
   server.listen(parseInt(HTTP_PORT, 10), '0.0.0.0', () => {
     logger.info({ action: 'http.start', port: HTTP_PORT }, 'HTTP server listening');
   });
@@ -197,7 +197,7 @@ async function main(): Promise<void> {
     const proto = await loadProto();
     const grpcServer = await startGrpcServer(proto, grpcHandler);
 
-    startHttpServer(createInvoiceUC);
+    startHttpServer(createInvoiceUC, invoiceRepo);
 
     setupShutdown(grpcServer);
 
