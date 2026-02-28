@@ -3,8 +3,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Formatting.Compact;
+using WorkOrderService.Application.UseCases;
+using WorkOrderService.Domain.Repositories;
 using WorkOrderService.Events;
 using WorkOrderService.Infrastructure;
+using WorkOrderService.Infrastructure.Repositories;
 using WorkOrderService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -59,6 +62,14 @@ builder.Services.AddDbContext<WorkOrderDbContext>(options =>
     }));
 
 builder.Services.AddScoped<EventPublisher>();
+builder.Services.AddScoped<IWorkOrderRepository, EfWorkOrderRepository>();
+builder.Services.AddScoped<CreateWorkOrderUseCase>();
+builder.Services.AddScoped<GetWorkOrderUseCase>();
+builder.Services.AddScoped<ListWorkOrdersUseCase>();
+builder.Services.AddScoped<UpdateWorkOrderStatusUseCase>();
+builder.Services.AddScoped<AddLineItemUseCase>();
+builder.Services.AddScoped<RemoveLineItemUseCase>();
+builder.Services.AddScoped<AddLaborEntryUseCase>();
 
 // ─── Build ──────────────────────────────────────────────────────────────────────
 

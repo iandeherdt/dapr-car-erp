@@ -1,6 +1,11 @@
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyPluginOptions, FastifyRequest, FastifyReply } from 'fastify';
 import { GrpcClientError } from '../clients/grpc-client.js';
-import * as inventoryClient from '../clients/inventory-client.js';
+import type { IInventoryService } from '../application/services/IInventoryService.js';
+import type { CreatePartRequest, UpdatePartRequest } from '../clients/inventory-client.js';
+
+export interface InventoryRouteOptions extends FastifyPluginOptions {
+  service: IInventoryService;
+}
 
 function handleError(err: unknown, reply: FastifyReply): FastifyReply {
   if (err instanceof GrpcClientError) {
@@ -27,7 +32,9 @@ const errorResponses = {
   500: { $ref: 'ApiError#' },
 };
 
-export async function inventoryRoutes(fastify: FastifyInstance): Promise<void> {
+export async function inventoryRoutes(fastify: FastifyInstance, opts: InventoryRouteOptions): Promise<void> {
+  const { service } = opts;
+
   // GET /api/parts/low-stock  — must be registered BEFORE /api/parts/:id to avoid param clash
   fastify.get(
     '/parts/low-stock',
@@ -55,7 +62,7 @@ export async function inventoryRoutes(fastify: FastifyInstance): Promise<void> {
         const pageSize = parseInt(request.query.pageSize ?? '20', 10);
         const correlationId = (request as any).correlationId;
 
-        const result = await inventoryClient.listLowStockParts({ page, pageSize }, correlationId);
+        const result = await service.listLowStockParts({ page, pageSize }, correlationId);
         return reply.send(result);
       } catch (err) {
         return handleError(err, reply);
@@ -97,7 +104,7 @@ export async function inventoryRoutes(fastify: FastifyInstance): Promise<void> {
         const { category, search } = request.query;
         const correlationId = (request as any).correlationId;
 
-        const result = await inventoryClient.listParts({ page, pageSize }, category, search, correlationId);
+        const result = await service.listParts({ page, pageSize }, category, search, correlationId);
         return reply.send(result);
       } catch (err) {
         return handleError(err, reply);
@@ -136,12 +143,12 @@ export async function inventoryRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (
-      request: FastifyRequest<{ Body: inventoryClient.CreatePartRequest }>,
+      request: FastifyRequest<{ Body: CreatePartRequest }>,
       reply: FastifyReply,
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const part = await inventoryClient.createPart(request.body, correlationId);
+        const part = await service.createPart(request.body, correlationId);
         return reply.status(201).send(part);
       } catch (err) {
         return handleError(err, reply);
@@ -169,7 +176,7 @@ export async function inventoryRoutes(fastify: FastifyInstance): Promise<void> {
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const part = await inventoryClient.getPart(request.params.id, correlationId);
+        const part = await service.getPart(request.params.id, correlationId);
         return reply.send(part);
       } catch (err) {
         return handleError(err, reply);
@@ -206,13 +213,13 @@ export async function inventoryRoutes(fastify: FastifyInstance): Promise<void> {
     async (
       request: FastifyRequest<{
         Params: { id: string };
-        Body: Omit<inventoryClient.UpdatePartRequest, 'id'>;
+        Body: Omit<UpdatePartRequest, 'id'>;
       }>,
       reply: FastifyReply,
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const part = await inventoryClient.updatePart({
+        const part = await service.updatePart({
           ...request.body,
           id: request.params.id,
         }, correlationId);

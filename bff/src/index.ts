@@ -9,6 +9,10 @@ import { inventoryRoutes } from './routes/inventory.js';
 import { billingRoutes } from './routes/billing.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { schemas } from './schemas.js';
+import { GrpcCustomerService } from './infrastructure/grpc/GrpcCustomerService.js';
+import { GrpcWorkOrderService } from './infrastructure/grpc/GrpcWorkOrderService.js';
+import { GrpcInventoryService } from './infrastructure/grpc/GrpcInventoryService.js';
+import { GrpcBillingService } from './infrastructure/grpc/GrpcBillingService.js';
 
 const PORT = parseInt(process.env.BFF_PORT || '4000', 10);
 const HOST = process.env.BFF_HOST || '0.0.0.0';
@@ -133,12 +137,18 @@ async function bootstrap(): Promise<void> {
     },
   );
 
-  // Register route plugins
-  await server.register(customerRoutes, { prefix: '/api' });
-  await server.register(workOrderRoutes, { prefix: '/api' });
-  await server.register(inventoryRoutes, { prefix: '/api' });
-  await server.register(billingRoutes, { prefix: '/api' });
-  await server.register(dashboardRoutes, { prefix: '/api' });
+  // Instantiate service implementations
+  const customerService = new GrpcCustomerService();
+  const workOrderService = new GrpcWorkOrderService();
+  const inventoryService = new GrpcInventoryService();
+  const billingService = new GrpcBillingService();
+
+  // Register route plugins with injected services
+  await server.register(customerRoutes, { prefix: '/api', service: customerService });
+  await server.register(workOrderRoutes, { prefix: '/api', workOrderService, customerService });
+  await server.register(inventoryRoutes, { prefix: '/api', service: inventoryService });
+  await server.register(billingRoutes, { prefix: '/api', service: billingService });
+  await server.register(dashboardRoutes, { prefix: '/api', workOrderService, inventoryService, billingService });
 
   // Start listening
   await server.listen({ port: PORT, host: HOST });

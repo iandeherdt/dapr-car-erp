@@ -1,7 +1,13 @@
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyPluginOptions, FastifyRequest, FastifyReply } from 'fastify';
 import { GrpcClientError } from '../clients/grpc-client.js';
-import * as workOrderClient from '../clients/workorder-client.js';
-import * as customerClient from '../clients/customer-client.js';
+import type { IWorkOrderService } from '../application/services/IWorkOrderService.js';
+import type { ICustomerService } from '../application/services/ICustomerService.js';
+import type { WorkOrderStatus, AddLaborEntryRequest } from '../clients/workorder-client.js';
+
+export interface WorkOrderRouteOptions extends FastifyPluginOptions {
+  workOrderService: IWorkOrderService;
+  customerService: ICustomerService;
+}
 
 function handleError(err: unknown, reply: FastifyReply): FastifyReply {
   if (err instanceof GrpcClientError) {
@@ -36,7 +42,9 @@ const errorResponses = {
   500: { $ref: 'ApiError#' },
 };
 
-export async function workOrderRoutes(fastify: FastifyInstance): Promise<void> {
+export async function workOrderRoutes(fastify: FastifyInstance, opts: WorkOrderRouteOptions): Promise<void> {
+  const { workOrderService, customerService } = opts;
+
   // GET /api/work-orders
   fastify.get(
     '/work-orders',
@@ -68,7 +76,7 @@ export async function workOrderRoutes(fastify: FastifyInstance): Promise<void> {
         Querystring: {
           page?: string;
           pageSize?: string;
-          status?: workOrderClient.WorkOrderStatus;
+          status?: WorkOrderStatus;
           customerId?: string;
         };
       }>,
@@ -80,7 +88,7 @@ export async function workOrderRoutes(fastify: FastifyInstance): Promise<void> {
         const { status, customerId } = request.query;
         const correlationId = (request as any).correlationId;
 
-        const result = await workOrderClient.listWorkOrders(
+        const result = await workOrderService.listWorkOrders(
           { page, pageSize },
           status,
           customerId,
@@ -121,12 +129,14 @@ export async function workOrderRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (
-      request: FastifyRequest<{ Body: workOrderClient.CreateWorkOrderRequest }>,
+      request: FastifyRequest<{
+        Body: { customerId: string; vehicleId: string; description: string; assignedMechanic?: string; notes?: string };
+      }>,
       reply: FastifyReply,
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const workOrder = await workOrderClient.createWorkOrder(request.body, correlationId);
+        const workOrder = await workOrderService.createWorkOrder(request.body, correlationId);
         return reply.status(201).send(workOrder);
       } catch (err) {
         return handleError(err, reply);
@@ -155,11 +165,11 @@ export async function workOrderRoutes(fastify: FastifyInstance): Promise<void> {
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const workOrder = await workOrderClient.getWorkOrder(request.params.id, correlationId);
+        const workOrder = await workOrderService.getWorkOrder(request.params.id, correlationId);
 
         const [customer, vehicle] = await Promise.all([
-          customerClient.getCustomer(workOrder.customerId, correlationId),
-          customerClient.getVehicle(workOrder.vehicleId, correlationId),
+          customerService.getCustomer(workOrder.customerId, correlationId),
+          customerService.getVehicle(workOrder.vehicleId, correlationId),
         ]);
 
         return reply.send({
@@ -195,11 +205,11 @@ export async function workOrderRoutes(fastify: FastifyInstance): Promise<void> {
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const workOrder = await workOrderClient.getWorkOrder(request.params.id, correlationId);
+        const workOrder = await workOrderService.getWorkOrder(request.params.id, correlationId);
 
         const [customer, vehicle] = await Promise.all([
-          customerClient.getCustomer(workOrder.customerId, correlationId),
-          customerClient.getVehicle(workOrder.vehicleId, correlationId),
+          customerService.getCustomer(workOrder.customerId, correlationId),
+          customerService.getVehicle(workOrder.vehicleId, correlationId),
         ]);
 
         return reply.send({
@@ -241,13 +251,13 @@ export async function workOrderRoutes(fastify: FastifyInstance): Promise<void> {
     async (
       request: FastifyRequest<{
         Params: { id: string };
-        Body: { status: workOrderClient.WorkOrderStatus };
+        Body: { status: WorkOrderStatus };
       }>,
       reply: FastifyReply,
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const workOrder = await workOrderClient.updateWorkOrderStatus({
+        const workOrder = await workOrderService.updateWorkOrderStatus({
           id: request.params.id,
           newStatus: request.body.status,
         }, correlationId);
@@ -290,7 +300,7 @@ export async function workOrderRoutes(fastify: FastifyInstance): Promise<void> {
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const workOrder = await workOrderClient.addLineItem({
+        const workOrder = await workOrderService.addLineItem({
           workOrderId: request.params.id,
           partId: request.body.partId,
           quantity: request.body.quantity,
@@ -329,7 +339,7 @@ export async function workOrderRoutes(fastify: FastifyInstance): Promise<void> {
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const workOrder = await workOrderClient.removeLineItem({
+        const workOrder = await workOrderService.removeLineItem({
           workOrderId: request.params.id,
           lineItemId: request.params.lid,
         }, correlationId);
@@ -367,14 +377,14 @@ export async function workOrderRoutes(fastify: FastifyInstance): Promise<void> {
     async (
       request: FastifyRequest<{
         Params: { id: string };
-        Body: Omit<workOrderClient.AddLaborEntryRequest, 'workOrderId'>;
+        Body: Omit<AddLaborEntryRequest, 'workOrderId'>;
       }>,
       reply: FastifyReply,
     ) => {
       try {
         const correlationId = (request as any).correlationId;
         const body = request.body as any;
-        const workOrder = await workOrderClient.addLaborEntry({
+        const workOrder = await workOrderService.addLaborEntry({
           workOrderId: request.params.id,
           description: body.description,
           mechanicName: body.mechanicName ?? body.technicianName,

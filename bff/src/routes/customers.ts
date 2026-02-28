@@ -1,6 +1,11 @@
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyPluginOptions, FastifyRequest, FastifyReply } from 'fastify';
 import { GrpcClientError } from '../clients/grpc-client.js';
-import * as customerClient from '../clients/customer-client.js';
+import type { ICustomerService } from '../application/services/ICustomerService.js';
+import type { CreateCustomerRequest, AddVehicleRequest } from '../clients/customer-client.js';
+
+export interface CustomerRouteOptions extends FastifyPluginOptions {
+  service: ICustomerService;
+}
 
 function handleError(err: unknown, reply: FastifyReply): FastifyReply {
   if (err instanceof GrpcClientError) {
@@ -27,7 +32,9 @@ const errorResponses = {
   500: { $ref: 'ApiError#' },
 };
 
-export async function customerRoutes(fastify: FastifyInstance): Promise<void> {
+export async function customerRoutes(fastify: FastifyInstance, opts: CustomerRouteOptions): Promise<void> {
+  const { service } = opts;
+
   // GET /api/customers
   fastify.get(
     '/customers',
@@ -61,7 +68,7 @@ export async function customerRoutes(fastify: FastifyInstance): Promise<void> {
         const search = request.query.search;
         const correlationId = (request as any).correlationId;
 
-        const result = await customerClient.listCustomers({ page, pageSize }, search, correlationId);
+        const result = await service.listCustomers({ page, pageSize }, search, correlationId);
         return reply.send(result);
       } catch (err) {
         return handleError(err, reply);
@@ -100,12 +107,12 @@ export async function customerRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (
-      request: FastifyRequest<{ Body: customerClient.CreateCustomerRequest }>,
+      request: FastifyRequest<{ Body: CreateCustomerRequest }>,
       reply: FastifyReply,
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const customer = await customerClient.createCustomer(request.body, correlationId);
+        const customer = await service.createCustomer(request.body, correlationId);
         return reply.status(201).send(customer);
       } catch (err) {
         return handleError(err, reply);
@@ -133,7 +140,7 @@ export async function customerRoutes(fastify: FastifyInstance): Promise<void> {
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const customer = await customerClient.getCustomer(request.params.id, correlationId);
+        const customer = await service.getCustomer(request.params.id, correlationId);
         return reply.send(customer);
       } catch (err) {
         return handleError(err, reply);
@@ -175,13 +182,13 @@ export async function customerRoutes(fastify: FastifyInstance): Promise<void> {
     async (
       request: FastifyRequest<{
         Params: { id: string };
-        Body: customerClient.CreateCustomerRequest;
+        Body: CreateCustomerRequest;
       }>,
       reply: FastifyReply,
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const updated = await customerClient.updateCustomer({
+        const updated = await service.updateCustomer({
           ...request.body,
           id: request.params.id,
         }, correlationId);
@@ -212,7 +219,7 @@ export async function customerRoutes(fastify: FastifyInstance): Promise<void> {
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        await customerClient.deleteCustomer(request.params.id, correlationId);
+        await service.deleteCustomer(request.params.id, correlationId);
         return reply.status(204).send();
       } catch (err) {
         return handleError(err, reply);
@@ -254,13 +261,13 @@ export async function customerRoutes(fastify: FastifyInstance): Promise<void> {
     async (
       request: FastifyRequest<{
         Params: { id: string };
-        Body: Omit<customerClient.AddVehicleRequest, 'customerId'>;
+        Body: Omit<AddVehicleRequest, 'customerId'>;
       }>,
       reply: FastifyReply,
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const vehicle = await customerClient.addVehicle({
+        const vehicle = await service.addVehicle({
           ...request.body,
           customerId: request.params.id,
         }, correlationId);
@@ -312,13 +319,13 @@ export async function customerRoutes(fastify: FastifyInstance): Promise<void> {
     async (
       request: FastifyRequest<{
         Params: { id: string; vid: string };
-        Body: Omit<customerClient.UpdateVehicleRequest, 'id' | 'customerId'>;
+        Body: Omit<AddVehicleRequest, 'customerId'>;
       }>,
       reply: FastifyReply,
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const vehicle = await customerClient.updateVehicle({
+        const vehicle = await service.updateVehicle({
           ...request.body,
           id: request.params.vid,
           customerId: request.params.id,

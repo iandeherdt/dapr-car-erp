@@ -1,6 +1,11 @@
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyPluginOptions, FastifyRequest, FastifyReply } from 'fastify';
 import { GrpcClientError } from '../clients/grpc-client.js';
-import * as billingClient from '../clients/billing-client.js';
+import type { IBillingService } from '../application/services/IBillingService.js';
+import type { InvoiceStatus } from '../clients/billing-client.js';
+
+export interface BillingRouteOptions extends FastifyPluginOptions {
+  service: IBillingService;
+}
 
 function handleError(err: unknown, reply: FastifyReply): FastifyReply {
   if (err instanceof GrpcClientError) {
@@ -27,7 +32,9 @@ const errorResponses = {
   500: { $ref: 'ApiError#' },
 };
 
-export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
+export async function billingRoutes(fastify: FastifyInstance, opts: BillingRouteOptions): Promise<void> {
+  const { service } = opts;
+
   // GET /api/invoices
   fastify.get(
     '/invoices',
@@ -58,7 +65,7 @@ export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
         Querystring: {
           page?: string;
           pageSize?: string;
-          status?: billingClient.InvoiceStatus;
+          status?: InvoiceStatus;
         };
       }>,
       reply: FastifyReply,
@@ -69,7 +76,7 @@ export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
         const { status } = request.query;
         const correlationId = (request as any).correlationId;
 
-        const result = await billingClient.listInvoices({ page, pageSize }, status, correlationId);
+        const result = await service.listInvoices({ page, pageSize }, status, correlationId);
         return reply.send(result);
       } catch (err) {
         return handleError(err, reply);
@@ -97,7 +104,7 @@ export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const invoice = await billingClient.getInvoice(request.params.id, correlationId);
+        const invoice = await service.getInvoice(request.params.id, correlationId);
         return reply.send(invoice);
       } catch (err) {
         return handleError(err, reply);
@@ -132,13 +139,13 @@ export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
     async (
       request: FastifyRequest<{
         Params: { id: string };
-        Body: { status: billingClient.InvoiceStatus };
+        Body: { status: InvoiceStatus };
       }>,
       reply: FastifyReply,
     ) => {
       try {
         const correlationId = (request as any).correlationId;
-        const invoice = await billingClient.updateInvoiceStatus({
+        const invoice = await service.updateInvoiceStatus({
           id: request.params.id,
           newStatus: request.body.status,
         }, correlationId);
@@ -179,7 +186,7 @@ export async function billingRoutes(fastify: FastifyInstance): Promise<void> {
         const pageSize = parseInt(request.query.pageSize ?? '20', 10);
         const correlationId = (request as any).correlationId;
 
-        const result = await billingClient.getInvoicesByCustomer(request.params.id, {
+        const result = await service.getInvoicesByCustomer(request.params.id, {
           page,
           pageSize,
         }, correlationId);

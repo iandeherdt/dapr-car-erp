@@ -1,6 +1,9 @@
 using Dapr.Client;
+using InventoryService.Application.UseCases;
+using InventoryService.Domain.Repositories;
 using InventoryService.Events;
 using InventoryService.Infrastructure;
+using InventoryService.Infrastructure.Repositories;
 using InventoryService.Services;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -28,6 +31,20 @@ builder.Services.AddSingleton<EventPublisher>();
 // ── Database ──────────────────────────────────────────────────────────────────
 builder.Services.AddDbContext<InventoryDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// ── Repositories ──────────────────────────────────────────────────────────────
+builder.Services.AddScoped<IPartRepository, EfPartRepository>();
+builder.Services.AddScoped<IReservationRepository, EfReservationRepository>();
+
+// ── Use Cases ─────────────────────────────────────────────────────────────────
+builder.Services.AddScoped<CreatePartUseCase>();
+builder.Services.AddScoped<GetPartUseCase>();
+builder.Services.AddScoped<ListPartsUseCase>();
+builder.Services.AddScoped<UpdatePartUseCase>();
+builder.Services.AddScoped<CheckAvailabilityUseCase>();
+builder.Services.AddScoped<ReservePartsUseCase>();
+builder.Services.AddScoped<ReleasePartsUseCase>();
+builder.Services.AddScoped<ListLowStockPartsUseCase>();
 
 // ── Kestrel: HTTP/2 on configurable port ─────────────────────────────────────
 var grpcPort = int.TryParse(Environment.GetEnvironmentVariable("APP_GRPC_PORT"), out var p) ? p : 50051;

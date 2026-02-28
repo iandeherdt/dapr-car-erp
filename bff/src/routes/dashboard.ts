@@ -1,8 +1,14 @@
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyPluginOptions, FastifyRequest, FastifyReply } from 'fastify';
 import { GrpcClientError } from '../clients/grpc-client.js';
-import * as workOrderClient from '../clients/workorder-client.js';
-import * as inventoryClient from '../clients/inventory-client.js';
-import * as billingClient from '../clients/billing-client.js';
+import type { IWorkOrderService } from '../application/services/IWorkOrderService.js';
+import type { IInventoryService } from '../application/services/IInventoryService.js';
+import type { IBillingService } from '../application/services/IBillingService.js';
+
+export interface DashboardRouteOptions extends FastifyPluginOptions {
+  workOrderService: IWorkOrderService;
+  inventoryService: IInventoryService;
+  billingService: IBillingService;
+}
 
 function handleError(err: unknown, reply: FastifyReply): FastifyReply {
   if (err instanceof GrpcClientError) {
@@ -12,7 +18,9 @@ function handleError(err: unknown, reply: FastifyReply): FastifyReply {
   return reply.status(500).send({ error: message });
 }
 
-export async function dashboardRoutes(fastify: FastifyInstance): Promise<void> {
+export async function dashboardRoutes(fastify: FastifyInstance, opts: DashboardRouteOptions): Promise<void> {
+  const { workOrderService, inventoryService, billingService } = opts;
+
   // GET /api/dashboard
   fastify.get(
     '/dashboard',
@@ -31,20 +39,15 @@ export async function dashboardRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (_request: FastifyRequest, reply: FastifyReply) => {
       try {
-        // Fetch all dashboard data concurrently from multiple services
         const [recentWorkOrdersResult, inProgressResult, lowStockResult, pendingInvoicesResult] =
           await Promise.all([
-            // Recent work orders (latest 5, no status filter)
-            workOrderClient.listWorkOrders({ page: 1, pageSize: 5 }),
-            // Active work orders (IN_PROGRESS status)
-            workOrderClient.listWorkOrders(
+            workOrderService.listWorkOrders({ page: 1, pageSize: 5 }),
+            workOrderService.listWorkOrders(
               { page: 1, pageSize: 1 },
               'WORK_ORDER_STATUS_IN_PROGRESS',
             ),
-            // Low stock parts
-            inventoryClient.listLowStockParts({ page: 1, pageSize: 1 }),
-            // Pending invoices (SENT status = awaiting payment)
-            billingClient.listInvoices({ page: 1, pageSize: 1 }, 'INVOICE_STATUS_SENT'),
+            inventoryService.listLowStockParts({ page: 1, pageSize: 1 }),
+            billingService.listInvoices({ page: 1, pageSize: 1 }, 'INVOICE_STATUS_SENT'),
           ]);
 
         return reply.send({

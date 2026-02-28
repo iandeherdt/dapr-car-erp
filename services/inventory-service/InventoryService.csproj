@@ -9,6 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="InventoryService.Tests/**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Grpc.AspNetCore" Version="2.62.0" />
     <PackageReference Include="Google.Protobuf" Version="3.27.0" />
     <PackageReference Include="Grpc.Tools" Version="2.62.0">

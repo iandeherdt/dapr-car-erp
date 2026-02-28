@@ -1,386 +1,198 @@
 using Grpc.Core;
-using Microsoft.EntityFrameworkCore;
 using Workorder.V1;
+using WorkOrderService.Application.UseCases;
 using WorkOrderService.Domain;
-using WorkOrderService.Events;
-using WorkOrderService.Infrastructure;
 using Common.V1;
 
 namespace WorkOrderService.Services;
 
 public class WorkOrderGrpcService : Workorder.V1.WorkOrderService.WorkOrderServiceBase
 {
-    private readonly WorkOrderDbContext _db;
-    private readonly EventPublisher _eventPublisher;
+    private readonly CreateWorkOrderUseCase _createWorkOrder;
+    private readonly GetWorkOrderUseCase _getWorkOrder;
+    private readonly ListWorkOrdersUseCase _listWorkOrders;
+    private readonly UpdateWorkOrderStatusUseCase _updateWorkOrderStatus;
+    private readonly AddLineItemUseCase _addLineItem;
+    private readonly RemoveLineItemUseCase _removeLineItem;
+    private readonly AddLaborEntryUseCase _addLaborEntry;
     private readonly ILogger<WorkOrderGrpcService> _logger;
 
     public WorkOrderGrpcService(
-        WorkOrderDbContext db,
-        EventPublisher eventPublisher,
+        CreateWorkOrderUseCase createWorkOrder,
+        GetWorkOrderUseCase getWorkOrder,
+        ListWorkOrdersUseCase listWorkOrders,
+        UpdateWorkOrderStatusUseCase updateWorkOrderStatus,
+        AddLineItemUseCase addLineItem,
+        RemoveLineItemUseCase removeLineItem,
+        AddLaborEntryUseCase addLaborEntry,
         ILogger<WorkOrderGrpcService> logger)
     {
-        _db = db;
-        _eventPublisher = eventPublisher;
+        _createWorkOrder = createWorkOrder;
+        _getWorkOrder = getWorkOrder;
+        _listWorkOrders = listWorkOrders;
+        _updateWorkOrderStatus = updateWorkOrderStatus;
+        _addLineItem = addLineItem;
+        _removeLineItem = removeLineItem;
+        _addLaborEntry = addLaborEntry;
         _logger = logger;
     }
 
-    // ─── CreateWorkOrder ──────────────────────────────────────────────────────
-
     public override async Task<Workorder.V1.WorkOrder> CreateWorkOrder(
-        CreateWorkOrderRequest request,
-        ServerCallContext context)
+        CreateWorkOrderRequest request, ServerCallContext context)
     {
-
         if (string.IsNullOrWhiteSpace(request.CustomerId))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "customer_id is required"));
-
         if (string.IsNullOrWhiteSpace(request.VehicleId))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "vehicle_id is required"));
-
         if (string.IsNullOrWhiteSpace(request.Description))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "description is required"));
-
         if (!Guid.TryParse(request.CustomerId, out var customerId))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "customer_id must be a valid UUID"));
-
         if (!Guid.TryParse(request.VehicleId, out var vehicleId))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "vehicle_id must be a valid UUID"));
 
-        var workOrder = new Domain.WorkOrder
+        try
         {
-            Id = Guid.NewGuid(),
-            CustomerId = customerId,
-            VehicleId = vehicleId,
-            Description = request.Description.Trim(),
-            AssignedMechanic = request.AssignedMechanic?.Trim() ?? string.Empty,
-            Notes = request.Notes?.Trim() ?? string.Empty,
-            Status = Domain.WorkOrderStatus.Draft,
-            Currency = "EUR",
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        };
-
-        _db.WorkOrders.Add(workOrder);
-        await _db.SaveChangesAsync(context.CancellationToken);
-
-        _logger.LogInformation("Created WorkOrder {WorkOrderId} for Customer {CustomerId}", workOrder.Id, workOrder.CustomerId);
-
-        await _eventPublisher.PublishWorkOrderCreatedAsync(workOrder, context.CancellationToken);
-
-        return MapToProto(workOrder);
+            var wo = await _createWorkOrder.ExecuteAsync(
+                customerId, vehicleId, request.Description,
+                request.AssignedMechanic, request.Notes, context.CancellationToken);
+            _logger.LogInformation("Created WorkOrder {WorkOrderId}", wo.Id);
+            return MapToProto(wo);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+        }
     }
-
-    // ─── GetWorkOrder ─────────────────────────────────────────────────────────
 
     public override async Task<Workorder.V1.WorkOrder> GetWorkOrder(
-        GetWorkOrderRequest request,
-        ServerCallContext context)
+        GetWorkOrderRequest request, ServerCallContext context)
     {
-
-        if (!Guid.TryParse(request.Id, out var workOrderId))
+        if (!Guid.TryParse(request.Id, out var id))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "id must be a valid UUID"));
 
-        var workOrder = await _db.WorkOrders
-            .Include(wo => wo.LineItems)
-            .Include(wo => wo.LaborEntries)
-            .AsNoTracking()
-            .FirstOrDefaultAsync(wo => wo.Id == workOrderId, context.CancellationToken);
-
-        if (workOrder is null)
-            throw new RpcException(new Status(StatusCode.NotFound, $"WorkOrder {request.Id} not found"));
-
-        return MapToProto(workOrder);
+        try
+        {
+            var wo = await _getWorkOrder.ExecuteAsync(id, context.CancellationToken);
+            return MapToProto(wo);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            throw new RpcException(new Status(StatusCode.NotFound, ex.Message));
+        }
     }
 
-    // ─── ListWorkOrders ───────────────────────────────────────────────────────
-
     public override async Task<ListWorkOrdersResponse> ListWorkOrders(
-        ListWorkOrdersRequest request,
-        ServerCallContext context)
+        ListWorkOrdersRequest request, ServerCallContext context)
     {
-
-        var query = _db.WorkOrders
-            .Include(wo => wo.LineItems)
-            .Include(wo => wo.LaborEntries)
-            .AsNoTracking()
-            .AsQueryable();
-
-        // Filter by status
+        Domain.WorkOrderStatus? statusFilter = null;
         if (request.StatusFilter != Workorder.V1.WorkOrderStatus.Unspecified)
-        {
-            var domainStatus = MapToDomainStatus(request.StatusFilter);
-            query = query.Where(wo => wo.Status == domainStatus);
-        }
+            statusFilter = MapToDomainStatus(request.StatusFilter);
 
-        // Filter by customer_id
+        Guid? customerIdFilter = null;
         if (!string.IsNullOrWhiteSpace(request.CustomerIdFilter))
         {
-            if (!Guid.TryParse(request.CustomerIdFilter, out var customerId))
+            if (!Guid.TryParse(request.CustomerIdFilter, out var cid))
                 throw new RpcException(new Status(StatusCode.InvalidArgument, "customer_id_filter must be a valid UUID"));
-
-            query = query.Where(wo => wo.CustomerId == customerId);
+            customerIdFilter = cid;
         }
-
-        var totalCount = await query.CountAsync(context.CancellationToken);
 
         var page = request.Pagination?.Page > 0 ? request.Pagination.Page : 1;
         var pageSize = request.Pagination?.PageSize > 0 ? request.Pagination.PageSize : 20;
+
+        var (items, totalCount) = await _listWorkOrders.ExecuteAsync(
+            page, pageSize, statusFilter, customerIdFilter, context.CancellationToken);
+
         var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
-
-        var workOrders = await query
-            .OrderByDescending(wo => wo.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(context.CancellationToken);
-
         var response = new ListWorkOrdersResponse
         {
             Pagination = new PaginationResult
             {
-                TotalCount = totalCount,
-                Page = page,
-                PageSize = pageSize,
-                TotalPages = totalPages,
+                TotalCount = totalCount, Page = page, PageSize = pageSize, TotalPages = totalPages,
             },
         };
-
-        response.WorkOrders.AddRange(workOrders.Select(MapToProto));
-
+        response.WorkOrders.AddRange(items.Select(MapToProto));
         return response;
     }
 
-    // ─── UpdateWorkOrderStatus ────────────────────────────────────────────────
-
     public override async Task<Workorder.V1.WorkOrder> UpdateWorkOrderStatus(
-        UpdateWorkOrderStatusRequest request,
-        ServerCallContext context)
+        UpdateWorkOrderStatusRequest request, ServerCallContext context)
     {
-
-        if (!Guid.TryParse(request.Id, out var workOrderId))
+        if (!Guid.TryParse(request.Id, out var id))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "id must be a valid UUID"));
-
         if (request.NewStatus == Workorder.V1.WorkOrderStatus.Unspecified)
             throw new RpcException(new Status(StatusCode.InvalidArgument, "new_status must be specified"));
 
-        var workOrder = await _db.WorkOrders
-            .Include(wo => wo.LineItems)
-            .Include(wo => wo.LaborEntries)
-            .FirstOrDefaultAsync(wo => wo.Id == workOrderId, context.CancellationToken);
-
-        if (workOrder is null)
-            throw new RpcException(new Status(StatusCode.NotFound, $"WorkOrder {request.Id} not found"));
-
-        var newDomainStatus = MapToDomainStatus(request.NewStatus);
-
-        if (!workOrder.CanTransitionTo(newDomainStatus))
+        try
         {
-            throw new RpcException(new Status(
-                StatusCode.FailedPrecondition,
-                $"Cannot transition WorkOrder from {workOrder.Status} to {newDomainStatus}"));
+            var wo = await _updateWorkOrderStatus.ExecuteAsync(
+                id, MapToDomainStatus(request.NewStatus), context.CancellationToken);
+            return MapToProto(wo);
         }
-
-        var previousStatus = workOrder.Status;
-        workOrder.Status = newDomainStatus;
-        workOrder.UpdatedAt = DateTime.UtcNow;
-
-        // Handle COMPLETED transition
-        if (newDomainStatus == Domain.WorkOrderStatus.Completed)
+        catch (KeyNotFoundException ex)
         {
-            workOrder.CompletedAt = DateTime.UtcNow;
-            workOrder.RecalculateActualTotal();
+            throw new RpcException(new Status(StatusCode.NotFound, ex.Message));
         }
-
-        await _db.SaveChangesAsync(context.CancellationToken);
-
-        _logger.LogInformation(
-            "WorkOrder {WorkOrderId} status changed from {Previous} to {New}",
-            workOrder.Id, previousStatus, newDomainStatus);
-
-        // Publish status-specific events
-        if (newDomainStatus == Domain.WorkOrderStatus.Completed)
-            await _eventPublisher.PublishWorkOrderCompletedAsync(workOrder, context.CancellationToken);
-        else if (newDomainStatus == Domain.WorkOrderStatus.Cancelled)
-            await _eventPublisher.PublishWorkOrderCancelledAsync(workOrder, context.CancellationToken);
-
-        return MapToProto(workOrder);
+        catch (InvalidOperationException ex)
+        {
+            throw new RpcException(new Status(StatusCode.FailedPrecondition, ex.Message));
+        }
     }
 
-    // ─── AddLineItem ──────────────────────────────────────────────────────────
-
     public override async Task<Workorder.V1.WorkOrder> AddLineItem(
-        AddLineItemRequest request,
-        ServerCallContext context)
+        AddLineItemRequest request, ServerCallContext context)
     {
-
         if (!Guid.TryParse(request.WorkOrderId, out var workOrderId))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "work_order_id must be a valid UUID"));
-
-        if (string.IsNullOrWhiteSpace(request.PartId))
-            throw new RpcException(new Status(StatusCode.InvalidArgument, "part_id is required"));
-
         if (!Guid.TryParse(request.PartId, out var partId))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "part_id must be a valid UUID"));
 
-        if (request.Quantity <= 0)
-            throw new RpcException(new Status(StatusCode.InvalidArgument, "quantity must be greater than 0"));
-
-        var workOrder = await _db.WorkOrders
-            .Include(wo => wo.LineItems)
-            .Include(wo => wo.LaborEntries)
-            .FirstOrDefaultAsync(wo => wo.Id == workOrderId, context.CancellationToken);
-
-        if (workOrder is null)
-            throw new RpcException(new Status(StatusCode.NotFound, $"WorkOrder {request.WorkOrderId} not found"));
-
-        if (workOrder.Status is Domain.WorkOrderStatus.Completed
-            or Domain.WorkOrderStatus.Cancelled
-            or Domain.WorkOrderStatus.Invoiced)
+        try
         {
-            throw new RpcException(new Status(
-                StatusCode.FailedPrecondition,
-                $"Cannot add line items to a WorkOrder in status {workOrder.Status}"));
+            var wo = await _addLineItem.ExecuteAsync(workOrderId, partId, request.Quantity, context.CancellationToken);
+            return MapToProto(wo);
         }
-
-        var lineItem = new Domain.WorkOrderLineItem
-        {
-            Id = Guid.NewGuid(),
-            WorkOrderId = workOrderId,
-            PartId = partId,
-            PartName = $"Part {request.PartId}", // Will be updated when inventory.parts-reserved is received
-            Quantity = request.Quantity,
-            UnitPriceCents = 0, // Populated via inventory event
-            TotalPriceCents = 0,
-            Currency = workOrder.Currency,
-            CreatedAt = DateTime.UtcNow,
-        };
-
-        workOrder.LineItems.Add(lineItem);
-        workOrder.RecalculateEstimatedTotal();
-
-        await _db.SaveChangesAsync(context.CancellationToken);
-
-        _logger.LogInformation(
-            "Added LineItem {LineItemId} (PartId={PartId}) to WorkOrder {WorkOrderId}",
-            lineItem.Id, partId, workOrderId);
-
-        await _eventPublisher.PublishPartsAddedAsync(workOrder, lineItem, context.CancellationToken);
-
-        return MapToProto(workOrder);
+        catch (KeyNotFoundException ex) { throw new RpcException(new Status(StatusCode.NotFound, ex.Message)); }
+        catch (ArgumentException ex) { throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message)); }
+        catch (InvalidOperationException ex) { throw new RpcException(new Status(StatusCode.FailedPrecondition, ex.Message)); }
     }
 
-    // ─── RemoveLineItem ───────────────────────────────────────────────────────
-
     public override async Task<Workorder.V1.WorkOrder> RemoveLineItem(
-        RemoveLineItemRequest request,
-        ServerCallContext context)
+        RemoveLineItemRequest request, ServerCallContext context)
     {
-
         if (!Guid.TryParse(request.WorkOrderId, out var workOrderId))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "work_order_id must be a valid UUID"));
-
         if (!Guid.TryParse(request.LineItemId, out var lineItemId))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "line_item_id must be a valid UUID"));
 
-        var workOrder = await _db.WorkOrders
-            .Include(wo => wo.LineItems)
-            .Include(wo => wo.LaborEntries)
-            .FirstOrDefaultAsync(wo => wo.Id == workOrderId, context.CancellationToken);
-
-        if (workOrder is null)
-            throw new RpcException(new Status(StatusCode.NotFound, $"WorkOrder {request.WorkOrderId} not found"));
-
-        if (workOrder.Status is Domain.WorkOrderStatus.Completed
-            or Domain.WorkOrderStatus.Cancelled
-            or Domain.WorkOrderStatus.Invoiced)
+        try
         {
-            throw new RpcException(new Status(
-                StatusCode.FailedPrecondition,
-                $"Cannot remove line items from a WorkOrder in status {workOrder.Status}"));
+            var wo = await _removeLineItem.ExecuteAsync(workOrderId, lineItemId, context.CancellationToken);
+            return MapToProto(wo);
         }
-
-        var lineItem = workOrder.LineItems.FirstOrDefault(li => li.Id == lineItemId);
-        if (lineItem is null)
-            throw new RpcException(new Status(StatusCode.NotFound, $"LineItem {request.LineItemId} not found on WorkOrder {request.WorkOrderId}"));
-
-        workOrder.LineItems.Remove(lineItem);
-        _db.WorkOrderLineItems.Remove(lineItem);
-        workOrder.RecalculateEstimatedTotal();
-
-        await _db.SaveChangesAsync(context.CancellationToken);
-
-        _logger.LogInformation(
-            "Removed LineItem {LineItemId} from WorkOrder {WorkOrderId}",
-            lineItemId, workOrderId);
-
-        return MapToProto(workOrder);
+        catch (KeyNotFoundException ex) { throw new RpcException(new Status(StatusCode.NotFound, ex.Message)); }
+        catch (InvalidOperationException ex) { throw new RpcException(new Status(StatusCode.FailedPrecondition, ex.Message)); }
     }
 
-    // ─── AddLaborEntry ────────────────────────────────────────────────────────
-
     public override async Task<Workorder.V1.WorkOrder> AddLaborEntry(
-        AddLaborEntryRequest request,
-        ServerCallContext context)
+        AddLaborEntryRequest request, ServerCallContext context)
     {
-
         if (!Guid.TryParse(request.WorkOrderId, out var workOrderId))
             throw new RpcException(new Status(StatusCode.InvalidArgument, "work_order_id must be a valid UUID"));
-
-        if (string.IsNullOrWhiteSpace(request.Description))
-            throw new RpcException(new Status(StatusCode.InvalidArgument, "description is required"));
-
-        if (request.Hours <= 0)
-            throw new RpcException(new Status(StatusCode.InvalidArgument, "hours must be greater than 0"));
-
         if (request.HourlyRate is null)
             throw new RpcException(new Status(StatusCode.InvalidArgument, "hourly_rate is required"));
 
-        if (string.IsNullOrWhiteSpace(request.MechanicName))
-            throw new RpcException(new Status(StatusCode.InvalidArgument, "mechanic_name is required"));
-
-        var workOrder = await _db.WorkOrders
-            .Include(wo => wo.LineItems)
-            .Include(wo => wo.LaborEntries)
-            .FirstOrDefaultAsync(wo => wo.Id == workOrderId, context.CancellationToken);
-
-        if (workOrder is null)
-            throw new RpcException(new Status(StatusCode.NotFound, $"WorkOrder {request.WorkOrderId} not found"));
-
-        if (workOrder.Status is Domain.WorkOrderStatus.Completed
-            or Domain.WorkOrderStatus.Cancelled
-            or Domain.WorkOrderStatus.Invoiced)
+        try
         {
-            throw new RpcException(new Status(
-                StatusCode.FailedPrecondition,
-                $"Cannot add labor entries to a WorkOrder in status {workOrder.Status}"));
+            var wo = await _addLaborEntry.ExecuteAsync(
+                workOrderId, request.Description, (decimal)request.Hours,
+                request.HourlyRate.AmountCents, request.MechanicName,
+                request.HourlyRate.Currency, context.CancellationToken);
+            return MapToProto(wo);
         }
-
-        var hourlyRateCents = request.HourlyRate.AmountCents;
-        var hours = (decimal)request.Hours;
-        var totalCents = (long)(hours * hourlyRateCents);
-
-        var laborEntry = new Domain.LaborEntry
-        {
-            Id = Guid.NewGuid(),
-            WorkOrderId = workOrderId,
-            Description = request.Description.Trim(),
-            Hours = hours,
-            HourlyRateCents = hourlyRateCents,
-            TotalCents = totalCents,
-            MechanicName = request.MechanicName.Trim(),
-            Currency = request.HourlyRate.Currency.Length > 0 ? request.HourlyRate.Currency : workOrder.Currency,
-            CreatedAt = DateTime.UtcNow,
-        };
-
-        workOrder.LaborEntries.Add(laborEntry);
-        workOrder.RecalculateEstimatedTotal();
-
-        await _db.SaveChangesAsync(context.CancellationToken);
-
-        _logger.LogInformation(
-            "Added LaborEntry {LaborEntryId} to WorkOrder {WorkOrderId}",
-            laborEntry.Id, workOrderId);
-
-        return MapToProto(workOrder);
+        catch (KeyNotFoundException ex) { throw new RpcException(new Status(StatusCode.NotFound, ex.Message)); }
+        catch (ArgumentException ex) { throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message)); }
+        catch (InvalidOperationException ex) { throw new RpcException(new Status(StatusCode.FailedPrecondition, ex.Message)); }
     }
 
     // ─── Mapping Helpers ──────────────────────────────────────────────────────
@@ -396,50 +208,29 @@ public class WorkOrderGrpcService : Workorder.V1.WorkOrderService.WorkOrderServi
             Status = MapToProtoStatus(wo.Status),
             AssignedMechanic = wo.AssignedMechanic,
             Notes = wo.Notes,
-            EstimatedTotal = new Money
-            {
-                AmountCents = wo.EstimatedTotalCents,
-                Currency = wo.Currency,
-            },
-            ActualTotal = new Money
-            {
-                AmountCents = wo.ActualTotalCents,
-                Currency = wo.Currency,
-            },
+            EstimatedTotal = new Money { AmountCents = wo.EstimatedTotalCents, Currency = wo.Currency },
+            ActualTotal = new Money { AmountCents = wo.ActualTotalCents, Currency = wo.Currency },
             CreatedAt = wo.CreatedAt.ToString("O"),
             UpdatedAt = wo.UpdatedAt.ToString("O"),
             CompletedAt = wo.CompletedAt?.ToString("O") ?? string.Empty,
         };
-
         proto.LineItems.AddRange(wo.LineItems.Select(MapLineItemToProto));
         proto.LaborEntries.AddRange(wo.LaborEntries.Select(MapLaborEntryToProto));
-
         return proto;
     }
 
     private static Workorder.V1.WorkOrderLineItem MapLineItemToProto(Domain.WorkOrderLineItem li) =>
-        new()
-        {
-            Id = li.Id.ToString(),
-            WorkOrderId = li.WorkOrderId.ToString(),
-            PartId = li.PartId.ToString(),
-            PartName = li.PartName,
-            Quantity = li.Quantity,
+        new() { Id = li.Id.ToString(), WorkOrderId = li.WorkOrderId.ToString(), PartId = li.PartId.ToString(),
+            PartName = li.PartName, Quantity = li.Quantity,
             UnitPrice = new Money { AmountCents = li.UnitPriceCents, Currency = li.Currency },
-            TotalPrice = new Money { AmountCents = li.TotalPriceCents, Currency = li.Currency },
-        };
+            TotalPrice = new Money { AmountCents = li.TotalPriceCents, Currency = li.Currency } };
 
     private static Workorder.V1.LaborEntry MapLaborEntryToProto(Domain.LaborEntry le) =>
-        new()
-        {
-            Id = le.Id.ToString(),
-            WorkOrderId = le.WorkOrderId.ToString(),
-            Description = le.Description,
-            Hours = (double)le.Hours,
+        new() { Id = le.Id.ToString(), WorkOrderId = le.WorkOrderId.ToString(),
+            Description = le.Description, Hours = (double)le.Hours,
             HourlyRate = new Money { AmountCents = le.HourlyRateCents, Currency = le.Currency },
             Total = new Money { AmountCents = le.TotalCents, Currency = le.Currency },
-            MechanicName = le.MechanicName,
-        };
+            MechanicName = le.MechanicName };
 
     private static Workorder.V1.WorkOrderStatus MapToProtoStatus(Domain.WorkOrderStatus status) =>
         status switch

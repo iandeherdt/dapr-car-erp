@@ -7,8 +7,10 @@ public class EventPublisher
 {
     private const string PubSubName = "car-erp-pubsub";
 
-    private readonly DaprClient _daprClient;
-    private readonly ILogger<EventPublisher> _logger;
+    private readonly DaprClient _daprClient = null!;
+    private readonly ILogger<EventPublisher> _logger = null!;
+
+    protected EventPublisher() { }
 
     public EventPublisher(DaprClient daprClient, ILogger<EventPublisher> logger)
     {
@@ -16,7 +18,7 @@ public class EventPublisher
         _logger = logger;
     }
 
-    public async Task PublishWorkOrderCreatedAsync(WorkOrder workOrder, CancellationToken ct = default)
+    public virtual async Task PublishWorkOrderCreatedAsync(WorkOrder workOrder, CancellationToken ct = default)
     {
         var evt = new WorkOrderCreatedEvent(
             WorkOrderId: workOrder.Id.ToString(),
@@ -32,7 +34,7 @@ public class EventPublisher
         _logger.LogInformation("Published workorder.created for WorkOrderId={WorkOrderId}", workOrder.Id);
     }
 
-    public async Task PublishWorkOrderCompletedAsync(WorkOrder workOrder, CancellationToken ct = default)
+    public virtual async Task PublishWorkOrderCompletedAsync(WorkOrder workOrder, CancellationToken ct = default)
     {
         var lineItems = workOrder.LineItems.Select(li => new LineItemEventData(
             LineItemId: li.Id.ToString(),
@@ -71,7 +73,7 @@ public class EventPublisher
         _logger.LogInformation("Published workorder.completed for WorkOrderId={WorkOrderId}", workOrder.Id);
     }
 
-    public async Task PublishWorkOrderCancelledAsync(WorkOrder workOrder, CancellationToken ct = default)
+    public virtual async Task PublishWorkOrderCancelledAsync(WorkOrder workOrder, CancellationToken ct = default)
     {
         var evt = new WorkOrderCancelledEvent(
             WorkOrderId: workOrder.Id.ToString(),
@@ -84,7 +86,7 @@ public class EventPublisher
         _logger.LogInformation("Published workorder.cancelled for WorkOrderId={WorkOrderId}", workOrder.Id);
     }
 
-    public async Task PublishPartsAddedAsync(WorkOrder workOrder, WorkOrderLineItem lineItem, CancellationToken ct = default)
+    public virtual async Task PublishPartsAddedAsync(WorkOrder workOrder, WorkOrderLineItem lineItem, CancellationToken ct = default)
     {
         var evt = new WorkOrderPartsAddedEvent(
             WorkOrderId: workOrder.Id.ToString(),

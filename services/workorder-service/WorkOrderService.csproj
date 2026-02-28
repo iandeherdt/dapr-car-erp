@@ -9,6 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="WorkOrderService.Tests/**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Protobuf Include="../../proto/workorder/v1/workorder.proto" GrpcServices="Server" ProtoRoot="../../proto" />
     <Protobuf Include="../../proto/common/v1/types.proto" GrpcServices="None" ProtoRoot="../../proto" />
   </ItemGroup>
