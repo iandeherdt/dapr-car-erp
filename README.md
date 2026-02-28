@@ -95,6 +95,53 @@ Creates sample customers, vehicles, work orders, and inventory parts via the BFF
 
 ---
 
+## Running the tests
+
+Each service has a self-contained unit-test suite. Tests run against mocked dependencies — no running infrastructure required.
+
+### Node.js services (Jest + ts-jest)
+
+```bash
+cd services/customer-service && npm test   # 18 tests
+cd services/billing-service  && npm test   # 19 tests
+cd bff                        && npm test   # 31 tests
+```
+
+### C# services (xUnit + Moq + FluentAssertions)
+
+If `dotnet` is installed locally:
+
+```bash
+cd services/workorder-service && dotnet test   # 17 tests
+cd services/inventory-service && dotnet test   # 10 tests
+```
+
+Without a local `dotnet` installation, run via the official SDK container:
+
+```bash
+docker run --rm \
+  -v "$(pwd)/services/workorder-service:/src" \
+  -w /src \
+  mcr.microsoft.com/dotnet/sdk:8.0 \
+  dotnet test --logger "console;verbosity=normal"
+
+docker run --rm \
+  -v "$(pwd)/services/inventory-service:/src" \
+  -w /src \
+  mcr.microsoft.com/dotnet/sdk:8.0 \
+  dotnet test --logger "console;verbosity=normal"
+```
+
+### Run all Node.js tests at once
+
+```bash
+(cd services/customer-service && npm test) && \
+(cd services/billing-service  && npm test) && \
+(cd bff                        && npm test)
+```
+
+---
+
 ## URLs
 
 ### Application

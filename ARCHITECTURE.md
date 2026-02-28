@@ -135,6 +135,137 @@ GET    /api/dashboard                ← aggregated stats from all services
 
 ---
 
+## Clean Architecture
+
+Every backend service is structured in four layers. Dependencies always point inward — outer layers depend on inner layers, never the reverse.
+
+```
+Domain          ← pure business rules, no framework dependencies
+   ▲
+Application     ← use cases / command handlers, orchestrate domain objects
+   ▲
+Infrastructure  ← Prisma / EF Core / Mongoose repos, Dapr publisher
+   ▲
+Presentation    ← thin gRPC handlers that call use cases and return responses
+```
+
+### Layer responsibilities
+
+| Layer | Contents | Allowed dependencies |
+|---|---|---|
+| **Domain** | Entities, value objects, repository interfaces, event publisher interface | None |
+| **Application** | Use cases, DTOs | Domain only |
+| **Infrastructure** | DB repositories (Prisma / EF Core / Mongoose), Dapr event publisher | Application, Domain |
+| **Presentation** | gRPC service handlers | Application |
+
+### Service implementations
+
+**Node.js services** (`customer-service`, `billing-service`, `bff`):
+
+```
+src/
+  domain/
+    entities/           # Pure TS classes — validation rules, business methods
+    repositories/       # IXxxRepository interfaces
+    events/             # IEventPublisher interface
+  application/
+    use-cases/          # One file per use case (CreateCustomerUseCase, etc.)
+  infrastructure/
+    repositories/       # Prisma / Mongoose implementations
+    events/             # DaprEventPublisher
+    db/                 # DB connection setup
+  presentation/
+    grpc/               # Thin handler — calls use case, maps proto ↔ domain types
+  index.ts              # DI wiring: construct repos → use cases → handler
+```
+
+**C# services** (`workorder-service`, `inventory-service`):
+
+```
+Domain/
+  Entities/             # EF Core entities + domain logic (RecalculateTotal, state machine)
+  Repositories/         # IXxxRepository interfaces (new)
+Application/
+  UseCases/             # One class per use case (new)
+Infrastructure/
+  Repositories/         # EF Core implementations (new)
+  Persistence/          # DbContext, migrations
+  Events/               # DaprEventPublisher
+Presentation/
+  GrpcServices/         # Thin ASP.NET Core gRPC service — delegates to use cases
+```
+
+**BFF** — gateway, so clean architecture is applied as a service interface layer:
+
+```
+src/
+  application/
+    services/           # ICustomerService, IWorkOrderService, IInventoryService, IBillingService
+  infrastructure/
+    grpc/               # GrpcCustomerService, … — implement interfaces, wrap gRPC clients
+  routes/               # Fastify routes — depend only on interfaces (injected via plugin opts)
+  clients/              # Proto-generated gRPC client functions (called by infra layer)
+```
+
+---
+
+## Testing
+
+Each service has a self-contained unit-test suite. Tests exercise business logic in isolation — all external dependencies (databases, gRPC, Dapr) are mocked.
+
+### Node.js services — Jest + ts-jest
+
+| Service | Tests | What's covered |
+|---|---|---|
+| `customer-service` | 18 | Entity validation, all customer + vehicle use cases |
+| `billing-service` | 19 | Invoice status transitions, tax calculations, all use cases |
+| `bff` | 31 | All route handlers via Fastify `inject()`, gRPC error → HTTP status mapping |
+
+Run:
+
+```bash
+cd services/customer-service && npm test
+cd services/billing-service  && npm test
+cd bff                        && npm test
+```
+
+BFF route tests use Fastify's built-in `inject()` API with stub service implementations:
+
+```ts
+const service: Partial<ICustomerService> = {
+  listCustomers: jest.fn().mockResolvedValue(mockListResponse),
+};
+const app = buildApp(service);        // registers schemas + plugin with injected stub
+const res = await app.inject({ method: 'GET', url: '/api/customers' });
+expect(res.statusCode).toBe(200);
+```
+
+### C# services — xUnit + Moq + FluentAssertions
+
+| Service | Tests | What's covered |
+|---|---|---|
+| `workorder-service` | 17 | Domain state machine, all use cases with Moq'd repositories |
+| `inventory-service` | 10 | AvailableQuantity, IsLowStock, all use cases |
+
+Run with a local `dotnet` SDK:
+
+```bash
+cd services/workorder-service && dotnet test
+cd services/inventory-service && dotnet test
+```
+
+Run via the official SDK container (no local `dotnet` required):
+
+```bash
+docker run --rm \
+  -v "$(pwd)/services/workorder-service:/src" \
+  -w /src \
+  mcr.microsoft.com/dotnet/sdk:8.0 \
+  dotnet test --logger "console;verbosity=normal"
+```
+
+---
+
 ## Event-Driven Workflow (Dapr pub/sub via Redis Streams)
 
 ```
@@ -306,9 +437,13 @@ car-erp/
 │       └── src/logger.ts        # pino logger + withServiceLogging() proxy
 ├── bff/                         # Node.js/TS — Fastify REST → gRPC via Dapr
 │   └── src/
+│       ├── application/
+│       │   └── services/        # ICustomerService, IWorkOrderService, IInventoryService, IBillingService
+│       ├── infrastructure/
+│       │   └── grpc/            # GrpcCustomerService, … (implement service interfaces)
 │       ├── routes/              # customers.ts, workorders.ts, inventory.ts, billing.ts, dashboard.ts
-│       ├── clients/             # gRPC client wrappers (via Dapr sidecar proxy)
-│       ├── aggregators/         # Cross-service data composition
+│       ├── clients/             # Proto-generated gRPC client functions (via Dapr sidecar)
+│       ├── schemas/             # Shared JSON schemas for request/response validation
 │       └── generated/           # Proto-generated TypeScript types
 ├── frontend/
 │   ├── packages/
