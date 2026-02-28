@@ -29,6 +29,8 @@ Browser
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full breakdown including event flows, Module Federation singletons, correlation ID propagation, and structured logging design.
 
+See [CLAUDE.md](./CLAUDE.md) for the coding and architecture principles followed in this project — bounded context rules, when to apply Strategy / Actor / Saga / CQRS, concurrency guidelines, testing conventions, and a pre-PR checklist.
+
 ---
 
 ## Prerequisites
